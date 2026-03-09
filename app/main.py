@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import Session, select
-from app.api.v1 import endpoints
+from app.api.v1 import endpoints, discovery
 from app.core.config import settings
 from app.db.session import init_db
 from app.messaging.events import rabbitmq
@@ -30,3 +30,4 @@ async def root():
 
 # Include API v1 routers
 app.include_router(endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(discovery.router, prefix=settings.API_V1_STR)

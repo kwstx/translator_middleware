@@ -44,6 +44,14 @@ class AgentRegistry(SQLModel, table=True):
         default=[], 
         sa_column=Column(ARRAY(String))
     )
+    capabilities: List[str] = Field(
+        default=[],
+        sa_column=Column(ARRAY(String))
+    )
+    semantic_tags: List[str] = Field(
+        default=[],
+        sa_column=Column(ARRAY(String))
+    )
     endpoint_url: str = Field(nullable=False)
     last_seen: datetime = Field(default_factory=datetime.utcnow)
 
