@@ -73,19 +73,27 @@ class Settings(BaseSettings):
         # asyncpg does not accept sslmode=*, so map it to ssl=true/false.
         if self.DATABASE_URL and "+asyncpg" in self.DATABASE_URL:
             parts = urlsplit(self.DATABASE_URL)
-            query = dict(parse_qsl(parts.query, keep_blank_values=True))
-            if "ssl" not in query and "sslmode" in query:
-                sslmode = query.pop("sslmode")
-                if sslmode in {"require", "verify-full", "verify-ca"}:
-                    query["ssl"] = "true"
-                elif sslmode in {"disable", "allow", "prefer"}:
-                    query["ssl"] = "false"
-            # libpq-specific params not supported by asyncpg
-            for key in ("sslmode", "channel_binding", "sslrootcert", "sslcert", "sslkey", "sslcrl"):
-                if key in query:
-                    query.pop(key)
+            raw_pairs = parse_qsl(parts.query, keep_blank_values=True)
+            cleaned_pairs = []
+            sslmode_value = None
+            for key, value in raw_pairs:
+                key_clean = key.strip().lower()
+                value_clean = value.strip().strip("\"'")
+                if key_clean == "sslmode":
+                    sslmode_value = value_clean
+                    continue
+                if key_clean in {"channel_binding", "sslrootcert", "sslcert", "sslkey", "sslcrl"}:
+                    continue
+                cleaned_pairs.append((key.strip(), value_clean))
+
+            if sslmode_value and not any(k.strip().lower() == "ssl" for k, _ in cleaned_pairs):
+                if sslmode_value in {"require", "verify-full", "verify-ca"}:
+                    cleaned_pairs.append(("ssl", "true"))
+                elif sslmode_value in {"disable", "allow", "prefer"}:
+                    cleaned_pairs.append(("ssl", "false"))
+
             self.DATABASE_URL = urlunsplit(
-                (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+                (parts.scheme, parts.netloc, parts.path, urlencode(cleaned_pairs), parts.fragment)
             )
 
         if not self.REDIS_ENABLED:
