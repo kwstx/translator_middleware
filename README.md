@@ -26,7 +26,7 @@ flowchart LR
 
 ## Quick Start
 
-The standard way to run the middleware with its dependencies (PostgreSQL, Redis) is using Docker Compose.
+The standard way to run the middleware with its dependencies (Neon, Redis) is using Docker Compose.
 
 ```bash
 docker compose up --build
@@ -119,7 +119,7 @@ Configuration is managed via environment variables. Create a `.env` file in the 
 | Variable | Description |
 | :--- | :--- |
 | `ENVIRONMENT` | Operating environment (`development`, `production`). |
-| `DATABASE_URL` | PostgreSQL connection string. |
+| `DATABASE_URL` | Neon connection string. |
 | `REDIS_ENABLED` | Set to `true` to use Redis for semantic cache. |
 | `AUTH_ISSUER` | Expected JWT issuer for validation. |
 | `AUTH_AUDIENCE` | Expected JWT audience for validation. |
@@ -154,7 +154,7 @@ pytest -q
 
 *   **HTTP 401/403 on Translation**: Ensure an `Authorization: Bearer <TOKEN>` header is provided. The token's issuer and audience must match your `AUTH_ISSUER` and `AUTH_AUDIENCE` settings.
 *   **Translation/Mapping Errors**: Check the application logs. If the semantic engine fails to map fields, check the ML fallback suggestions in the logs or upload an updated ontology file.
-*   **Database Connection Failed**: Ensure PostgreSQL is running and the `DATABASE_URL` is set correctly.
+*   **Database Connection Failed**: Ensure the Neon database is reachable and the `DATABASE_URL` is set correctly.
 
 ---
 
