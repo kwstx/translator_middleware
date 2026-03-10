@@ -35,6 +35,12 @@ jobs:
       AUTH_AUDIENCE: ${{ secrets.AUTH_AUDIENCE }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check GCP credentials
+        run: |
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "Missing GCP_SA_KEY secret. Add the secret or switch to workload identity."
+            exit 1
+          fi
       - uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
