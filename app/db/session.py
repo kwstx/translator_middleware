@@ -1,6 +1,7 @@
 import os
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, create_engine
 from app.core.config import settings
@@ -60,3 +61,40 @@ async def init_db():
             MappingFailureLog,
         )
         await conn.run_sync(SQLModel.metadata.create_all)
+        await _ensure_timestamptz(conn)
+
+
+async def _ensure_timestamptz(conn) -> None:
+    columns = {
+        "protocol_mapping": ["created_at", "updated_at"],
+        "protocol_version_delta": ["created_at", "updated_at"],
+        "agent_registry": ["last_seen"],
+        "semantic_ontology": ["created_at"],
+        "tasks": ["leased_until", "created_at", "updated_at", "completed_at", "dead_lettered_at"],
+        "agent_messages": ["leased_until", "created_at", "updated_at", "acked_at"],
+        "mapping_failure_logs": ["created_at"],
+    }
+
+    for table, cols in columns.items():
+        for col in cols:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = :table
+                      AND column_name = :column
+                    """
+                ),
+                {"table": table, "column": col},
+            )
+            data_type = result.scalar()
+            if data_type == "timestamp without time zone":
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {table} "
+                        f"ALTER COLUMN {col} TYPE TIMESTAMP WITH TIME ZONE "
+                        f"USING timezone('UTC', {col})"
+                    )
+                )

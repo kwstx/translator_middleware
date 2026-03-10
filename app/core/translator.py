@@ -1,5 +1,5 @@
 from typing import Dict, Any, Callable, Optional, Tuple, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import copy
 import structlog
 from app.core.exceptions import ProtocolMismatchError, TranslationError
@@ -341,7 +341,7 @@ if __name__ == "__main__":
     
     test_message = {
         "id": "msg_001",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
         "payload": {
             "action": "thermal_check",
             "due_date": datetime(2026, 3, 15, 12, 0)

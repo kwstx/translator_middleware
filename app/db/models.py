@@ -1,8 +1,8 @@
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import Enum, ARRAY, String, text, ForeignKey
+from sqlalchemy import Enum, ARRAY, String, text, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import enum
 
@@ -39,10 +39,13 @@ class ProtocolMapping(SQLModel, table=True):
         default={}, 
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
     )
 
 class ProtocolVersionDelta(SQLModel, table=True):
@@ -58,10 +61,13 @@ class ProtocolVersionDelta(SQLModel, table=True):
         default={},
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow}
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
     )
 
 class AgentRegistry(SQLModel, table=True):
@@ -84,7 +90,10 @@ class AgentRegistry(SQLModel, table=True):
         sa_column=Column(ARRAY(String))
     )
     endpoint_url: str = Field(nullable=False)
-    last_seen: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
     is_active: bool = Field(default=True)
 
 class SemanticOntology(SQLModel, table=True):
@@ -95,7 +104,10 @@ class SemanticOntology(SQLModel, table=True):
     namespace: str # e.g., "http://schema.org/"
     rdf_content: Optional[str] = Field(default=None) # Serialized RDF/XML or Turtle
     description: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
 
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"
@@ -116,15 +128,27 @@ class Task(SQLModel, table=True):
     attempts: int = Field(default=0, nullable=False)
     max_attempts: int = Field(default=5, nullable=False)
     lease_owner: Optional[str] = Field(default=None)
-    leased_until: Optional[datetime] = Field(default=None)
-    last_error: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+    leased_until: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
     )
-    completed_at: Optional[datetime] = Field(default=None)
-    dead_lettered_at: Optional[datetime] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
+    )
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    dead_lettered_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
 
 class AgentMessage(SQLModel, table=True):
     __tablename__ = "agent_messages"
@@ -144,14 +168,23 @@ class AgentMessage(SQLModel, table=True):
     attempts: int = Field(default=0, nullable=False)
     max_attempts: int = Field(default=5, nullable=False)
     lease_owner: Optional[str] = Field(default=None)
-    leased_until: Optional[datetime] = Field(default=None)
-    last_error: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+    leased_until: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
     )
-    acked_at: Optional[datetime] = Field(default=None)
+    last_error: Optional[str] = Field(default=None)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
+    )
+    acked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
 
 
 class MappingFailureLog(SQLModel, table=True):
@@ -169,4 +202,7 @@ class MappingFailureLog(SQLModel, table=True):
     model_suggestion: Optional[str] = Field(default=None)
     model_confidence: Optional[float] = Field(default=None)
     applied: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
