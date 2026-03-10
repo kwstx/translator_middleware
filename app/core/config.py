@@ -80,8 +80,10 @@ class Settings(BaseSettings):
                     query["ssl"] = "true"
                 elif sslmode in {"disable", "allow", "prefer"}:
                     query["ssl"] = "false"
-            if "sslmode" in query:
-                query.pop("sslmode")
+            # libpq-specific params not supported by asyncpg
+            for key in ("sslmode", "channel_binding", "sslrootcert", "sslcert", "sslkey", "sslcrl"):
+                if key in query:
+                    query.pop(key)
             self.DATABASE_URL = urlunsplit(
                 (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
             )
