@@ -9,3 +9,7 @@ class ProtocolMismatchError(TranslatorError):
 class TranslationError(TranslatorError):
     """Raised when translation logic fails."""
     pass
+
+class HandoffRoutingError(TranslatorError):
+    """Raised when no valid multi-hop translation path can be found between protocols."""
+    pass

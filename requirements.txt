@@ -14,3 +14,4 @@ jsonschema>=4.21.0
 pyDatalog>=0.17.4
 aiohttp>=3.9.3
 aio-pika>=9.4.0
+networkx>=3.2.0

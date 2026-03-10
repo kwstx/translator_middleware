@@ -19,6 +19,11 @@ class TranslatorEngine:
             # ("MCP", "A2A"): self._translate_mcp_to_a2a,
         }
 
+    @property
+    def supported_pairs(self) -> list[tuple[str, str]]:
+        """Returns all registered (source_protocol, target_protocol) pairs."""
+        return list(self._mappers.keys())
+
     def translate(self, source_message: Dict[str, Any], source_protocol: str, target_protocol: str) -> Dict[str, Any]:
         """
         Translates a message from one protocol to another.
