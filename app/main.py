@@ -69,10 +69,11 @@ async def validation_exception_handler(request, exc: RequestValidationError):
     )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
-limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT_DEFAULT])
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+if settings.RATE_LIMIT_ENABLED:
+    limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT_DEFAULT])
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
 if settings.HTTPS_ONLY:
     app.add_middleware(HTTPSRedirectMiddleware)

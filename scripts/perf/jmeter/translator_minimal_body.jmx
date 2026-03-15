@@ -39,10 +39,10 @@
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <boolProp name="HTTPArgument.use_equals">false</boolProp>
+                <boolProp name="HTTPArgument.use_equals">true</boolProp>
                 <stringProp name="Argument.name"></stringProp>
-                <stringProp name="Argument.value">{\"source_protocol\":\"A2A\",\"target_protocol\":\"MCP\",\"payload\":{\"id\":\"msg_001\",\"timestamp\":\"2026-03-15T10:00:00Z\",\"payload\":{\"action\":\"thermal_check\",\"due_date\":\"2026-03-15T12:00:00Z\"},\"data\":{\"task\":{\"kind\":\"diagnostic\",\"priority\":\"high\"}}}}</stringProp>
-                <stringProp name="Argument.metadata"></stringProp>
+                <stringProp name="Argument.value">{&quot;source_protocol&quot;:&quot;A2A&quot;,&quot;target_protocol&quot;:&quot;MCP&quot;,&quot;payload&quot;:{&quot;id&quot;:&quot;msg_001&quot;,&quot;timestamp&quot;:&quot;2026-03-15T10:00:00Z&quot;,&quot;payload&quot;:{&quot;action&quot;:&quot;thermal_check&quot;,&quot;due_date&quot;:&quot;2026-03-15T12:00:00Z&quot;},&quot;data&quot;:{&quot;task&quot;:{&quot;kind&quot;:&quot;diagnostic&quot;,&quot;priority&quot;:&quot;high&quot;}}}}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>
           </elementProp>
@@ -53,8 +53,23 @@
           <stringProp name="HTTPSampler.method">POST</stringProp>
           <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
         </HTTPSamplerProxy>
-        <hashTree/>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Force Raw Body" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+def body = new File('C:/Users/galan/translator_middleware/scripts/perf/jmeter/payload.json').text
+sampler.getArguments().clear()
+sampler.addNonEncodedArgument('', body, '')
+sampler.setPostBodyRaw(true)
+            </stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+        </hashTree>
       </hashTree>
     </hashTree>
   </hashTree>

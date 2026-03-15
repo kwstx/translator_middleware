@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testResults version="1.2">
+<httpSample t="362" it="0" lt="350" ct="82" ts="1773612183343" s="true" lb="POST /api/v1/beta/translate" rc="200" rm="OK" tn="Threads 1-1" dt="text" by="403" sby="744" ng="1" na="1">
+  <requestHeader class="java.lang.String">Connection: keep-alive
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJpc3MiOiJodHRwczovL2F1dGguZXhhbXBsZS5jb20vIiwiYXVkIjoidHJhbnNsYXRvci1taWRkbGV3YXJlIiwiaWF0IjoxNzczNjA4NzA3LCJleHAiOjE3NzM2MTU5MDcsInNjb3BlIjoidHJhbnNsYXRlOmEyYSB0cmFuc2xhdGU6YmV0YSJ9.wltYcB8pPvyKkJ7CAtVkcpIjluSAHLqu3YPbx2x-QF4
+Content-Length: 239
+Host: localhost:8000
+User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.18)
+</requestHeader>
+  <cookies class="java.lang.String"></cookies>
+  <method class="java.lang.String">POST</method>
+  <queryString class="java.lang.String">{&quot;source_protocol&quot;:&quot;A2A&quot;,&quot;target_protocol&quot;:&quot;MCP&quot;,&quot;payload&quot;:{&quot;id&quot;:&quot;msg_001&quot;,&quot;timestamp&quot;:&quot;2026-03-15T10:00:00Z&quot;,&quot;payload&quot;:{&quot;action&quot;:&quot;thermal_check&quot;,&quot;due_date&quot;:&quot;2026-03-15T12:00:00Z&quot;},&quot;data&quot;:{&quot;task&quot;:{&quot;kind&quot;:&quot;diagnostic&quot;,&quot;priority&quot;:&quot;high&quot;}}}}
+</queryString>
+  <java.net.URL>http://localhost:8000/api/v1/beta/translate</java.net.URL>
+</httpSample>
+
+</testResults>

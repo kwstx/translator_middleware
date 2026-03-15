@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: Optional[str] = None
     RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_ENABLED: bool = True
     
     # Postgres
     POSTGRES_SERVER: str = "db"

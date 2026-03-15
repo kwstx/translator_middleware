@@ -1,0 +1,34 @@
+{
+  "POST /api/v1/beta/translate" : {
+    "transaction" : "POST /api/v1/beta/translate",
+    "sampleCount" : 21622,
+    "errorCount" : 0,
+    "errorPct" : 0.0,
+    "meanResTime" : 376.66552585329754,
+    "medianResTime" : 339.0,
+    "minResTime" : 9.0,
+    "maxResTime" : 6241.0,
+    "pct1ResTime" : 563.0,
+    "pct2ResTime" : 677.9500000000007,
+    "pct3ResTime" : 806.0,
+    "throughput" : 122.44874844263224,
+    "receivedKBytesPerSec" : 48.19027892810624,
+    "sentKBytesPerSec" : 88.96666879034997
+  },
+  "Total" : {
+    "transaction" : "Total",
+    "sampleCount" : 21622,
+    "errorCount" : 0,
+    "errorPct" : 0.0,
+    "meanResTime" : 376.66552585329754,
+    "medianResTime" : 339.0,
+    "minResTime" : 9.0,
+    "maxResTime" : 6241.0,
+    "pct1ResTime" : 563.0,
+    "pct2ResTime" : 677.9500000000007,
+    "pct3ResTime" : 806.0,
+    "throughput" : 122.44874844263224,
+    "receivedKBytesPerSec" : 48.19027892810624,
+    "sentKBytesPerSec" : 88.96666879034997
+  }
+}
