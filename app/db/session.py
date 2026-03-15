@@ -12,6 +12,8 @@ for key in ("PGSSLMODE", "PGCHANNELBINDING", "PGSSLROOTCERT", "PGSSLCERT", "PGSS
     os.environ.pop(key, None)
 
 def _sanitize_db_url(url: str) -> tuple[str, bool]:
+    if url.startswith("sqlite"):
+        return url, False
     parts = urlsplit(url)
     raw_pairs = parse_qsl(parts.query, keep_blank_values=True)
     cleaned_pairs = []
@@ -61,7 +63,8 @@ async def init_db():
             MappingFailureLog,
         )
         await conn.run_sync(SQLModel.metadata.create_all)
-        await _ensure_timestamptz(conn)
+        if engine.dialect.name == "postgresql":
+            await _ensure_timestamptz(conn)
 
 
 async def _ensure_timestamptz(conn) -> None:

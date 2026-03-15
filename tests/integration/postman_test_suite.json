@@ -1,0 +1,66 @@
+{
+  "info": {
+    "name": "Engram Integration Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Register Source Agent",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"agent_id\": \"{{source_agent_id}}\",\n  \"name\": \"Source Agent\",\n  \"endpoint_url\": \"http://source-agent:8080\",\n  \"supported_protocols\": [\"A2A\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/register"
+        }
+      }
+    },
+    {
+      "name": "Register Target Agent",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"agent_id\": \"{{target_agent_id}}\",\n  \"name\": \"Target Agent\",\n  \"endpoint_url\": \"http://target-agent:8081\",\n  \"supported_protocols\": [\"MCP\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/register"
+        }
+      }
+    },
+    {
+      "name": "Enqueue Translation Task",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source_message\": {\n    \"id\": \"msg-123\",\n    \"payload\": {\n      \"intent\": \"thermal_scan\",\n      \"parameters\": {\"range\": 100}\n    },\n    \"data\": {\n      \"task\": \"scan_area_1\"\n    }\n  },\n  \"source_protocol\": \"A2A\",\n  \"target_protocol\": \"MCP\",\n  \"target_agent_id\": \"{{target_agent_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/queue/enqueue"
+        }
+      }
+    },
+    {
+      "name": "Poll for Translated Message",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/agents/{{target_agent_id}}/messages/poll"
+        }
+      }
+    }
+  ]
+}

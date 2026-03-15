@@ -85,5 +85,28 @@ For testing, use the following placeholder keys in `.env`:
 - `ANTHROPIC_API_KEY`: `test-anthropic-key`
 - `AUTH_JWT_SECRET`: `test-secret-key-do-not-use-in-prod`
 
----
-*Last Updated: 2026-03-15*
+## 8. Integration & E2E Testing (New)
+
+We have introduced automated integration flows that simulate end-to-end agent interactions.
+
+### Run Python E2E Suite
+This script starts a local server and worker, registers mock agents, and performs a full translation flow with fidelity verification.
+```powershell
+$env:PYTHONPATH="."
+python tests/integration/run_integration_e2e.py
+```
+
+### Run PowerShell API Flow (Automation)
+A standalone script that uses PowerShell's native REST commands (similar to `curl`) to chain calls.
+```powershell
+.\scripts\test_api_flow.ps1
+```
+
+### Postman Collection
+The collection is available at `tests/integration/postman_test_suite.json`. Import this into Postman to manually trigger the integration sequence.
+
+## 9. Input-Output Fidelity Verification
+The `run_integration_e2e.py` script includes a comparison engine that:
+1. Translates a message from Source Protocol to Target Protocol.
+2. Compares the result against a "Gold Standard" expected payload.
+3. Outputs a unified diff if translations drift from the expected fidelity.
