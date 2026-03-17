@@ -274,7 +274,7 @@ function App() {
         </div>
         <div className="hero-actions">
           <button className="primary" onClick={handleTranslate} disabled={isTranslating}>
-            {isTranslating ? 'Translating…' : 'Translate'}
+            {isTranslating ? 'Translatingâ€¦' : 'Translate'}
           </button>
           <button className="ghost" onClick={handleSwap} type="button">
             Swap protocols
@@ -283,7 +283,7 @@ function App() {
             <span className="dot" aria-hidden="true"></span>
             <span>
               {translateMeta
-                ? `${translateMeta.status} • ${translateMeta.latencyMs} ms`
+                ? `${translateMeta.status} â€¢ ${translateMeta.latencyMs} ms`
                 : 'Ready to translate'}
             </span>
           </div>
