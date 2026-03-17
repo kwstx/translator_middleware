@@ -176,7 +176,7 @@ function App() {
     if (!leftParsed.value || !rightParsed.value) {
       return []
     }
-    return collectDiffPaths(leftParsed.value, rightParsed.value).slice(0, 8)
+    return collectDiffPaths(leftParsed.value, rightParsed.value).slice(0, 6)
   }, [formattedInput, outputText])
 
   const handleTranslate = async () => {
@@ -253,38 +253,34 @@ function App() {
     const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`
     try {
       await navigator.clipboard.writeText(url)
-      setShareStatus('Link copied to clipboard')
+      setShareStatus('Link copied')
       setTimeout(() => setShareStatus(null), 2000)
     } catch {
-      setShareStatus('Copy failed. Select the URL from the address bar.')
+      setShareStatus('Copy failed')
       setTimeout(() => setShareStatus(null), 2500)
     }
   }
 
   return (
     <div className="app">
-      <header className="hero">
-        <div className="hero-copy">
+      <header className="topbar">
+        <div className="brand">
           <span className="eyebrow">Live Playground</span>
-          <h1>Agent Translator, on demand</h1>
-          <p>
-            Paste a payload, pick your source and target protocols, and watch the
-            middleware reshape your message in real time.
-          </p>
+          <h1>Agent Translator</h1>
         </div>
-        <div className="hero-actions">
+        <div className="top-actions">
           <button className="primary" onClick={handleTranslate} disabled={isTranslating}>
-            {isTranslating ? 'Translating…' : 'Translate'}
+            {isTranslating ? 'Translating...' : 'Translate'}
           </button>
           <button className="ghost" onClick={handleSwap} type="button">
-            Swap protocols
+            Swap
           </button>
           <div className="status">
             <span className="dot" aria-hidden="true"></span>
             <span>
               {translateMeta
-                ? `${translateMeta.status} • ${translateMeta.latencyMs} ms`
-                : 'Ready to translate'}
+                ? `${translateMeta.status} | ${translateMeta.latencyMs} ms`
+                : 'Ready'}
             </span>
           </div>
         </div>
@@ -292,7 +288,7 @@ function App() {
 
       <section className="controls">
         <label className="control">
-          <span>Source protocol</span>
+          <span>Source</span>
           <select value={sourceProtocol} onChange={(event) => setSourceProtocol(event.target.value)}>
             {PROTOCOLS.map((protocol) => (
               <option key={protocol} value={protocol}>
@@ -302,7 +298,7 @@ function App() {
           </select>
         </label>
         <label className="control">
-          <span>Target protocol</span>
+          <span>Target</span>
           <select value={targetProtocol} onChange={(event) => setTargetProtocol(event.target.value)}>
             {PROTOCOLS.map((protocol) => (
               <option key={protocol} value={protocol}>
@@ -312,7 +308,7 @@ function App() {
           </select>
         </label>
         <label className="control wide">
-          <span>API base URL</span>
+          <span>API base</span>
           <input
             value={apiBase}
             onChange={(event) => setApiBase(event.target.value)}
@@ -320,11 +316,11 @@ function App() {
           />
         </label>
         <label className="control">
-          <span>JWT (optional)</span>
+          <span>JWT</span>
           <input
             value={jwtToken}
             onChange={(event) => setJwtToken(event.target.value)}
-            placeholder="Sandbox token"
+            placeholder="Optional"
           />
         </label>
       </section>
@@ -334,14 +330,14 @@ function App() {
           <div className="panel-header">
             <div>
               <h2>Source payload</h2>
-              <p>Paste any JSON payload from your agent or docs.</p>
+              <p>Paste or load a JSON payload.</p>
             </div>
             <div className="panel-actions">
               <button className="text" onClick={handleFormat}>
-                Format JSON
+                Format
               </button>
               <button className="text" onClick={handleLoadExample}>
-                Load example
+                Example
               </button>
             </div>
           </div>
@@ -350,12 +346,12 @@ function App() {
               height="100%"
               language="json"
               value={inputText}
-              theme="vs-dark"
+              theme="vs-light"
               onChange={(value) => setInputText(value ?? '')}
               options={{
                 minimap: { enabled: false },
                 fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, monospace',
-                fontSize: 13,
+                fontSize: 12,
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
               }}
@@ -368,7 +364,7 @@ function App() {
           <div className="panel-header">
             <div>
               <h2>Translated output</h2>
-              <p>{translateMeta?.message ?? 'Trigger a translation to see the result.'}</p>
+              <p>{translateMeta?.message ?? 'Run a translation to see output.'}</p>
             </div>
             <div className="tab-group">
               <button
@@ -391,11 +387,11 @@ function App() {
                 height="100%"
                 language="json"
                 value={outputText || '{\n  "translated": ""\n}'}
-                theme="vs-dark"
+                theme="vs-light"
                 options={{
                   minimap: { enabled: false },
                   fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, monospace',
-                  fontSize: 13,
+                  fontSize: 12,
                   readOnly: true,
                   lineNumbers: 'on',
                   scrollBeyondLastLine: false,
@@ -405,7 +401,7 @@ function App() {
               <DiffEditor
                 height="100%"
                 language="json"
-                theme="vs-dark"
+                theme="vs-light"
                 original={formattedInput}
                 modified={outputText || '{\n  "translated": ""\n}'}
                 options={{
@@ -413,7 +409,7 @@ function App() {
                   renderSideBySide: true,
                   minimap: { enabled: false },
                   fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, monospace',
-                  fontSize: 13,
+                  fontSize: 12,
                 }}
               />
             )}
@@ -422,7 +418,7 @@ function App() {
             <div>
               <h3>Field changes</h3>
               {outputDiffPaths.length === 0 ? (
-                <p>No differences detected yet.</p>
+                <p>No differences yet.</p>
               ) : (
                 <ul>
                   {outputDiffPaths.map((path) => (
@@ -432,15 +428,15 @@ function App() {
               )}
             </div>
             <div>
-              <h3>Mapping suggestions</h3>
+              <h3>Suggestions</h3>
               {mappingSuggestions.length === 0 ? (
-                <p>No ML suggestions reported.</p>
+                <p>No ML suggestions.</p>
               ) : (
                 <ul>
                   {mappingSuggestions.map((suggestion) => (
                     <li key={suggestion.source_field}>
                       {suggestion.source_field}
-                      {suggestion.suggestion ? ` > ${suggestion.suggestion}` : ''}
+                      {suggestion.suggestion ? ` -> ${suggestion.suggestion}` : ''}
                     </li>
                   ))}
                 </ul>
@@ -452,15 +448,12 @@ function App() {
 
       <section className="share">
         <div>
-          <h3>Share this scenario</h3>
-          <p>
-            The payload and protocol choices are stored in the URL hash so teammates can
-            load the same translation instantly.
-          </p>
+          <h3>Share</h3>
+          <p>Copy a URL with the current payload and protocols.</p>
         </div>
         <div className="share-actions">
           <button className="primary" onClick={handleCopyShare}>
-            Copy share link
+            Copy link
           </button>
           {shareStatus && <span className="share-status">{shareStatus}</span>}
         </div>
