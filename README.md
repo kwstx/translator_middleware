@@ -1,8 +1,21 @@
 # Agent Translator Middleware
 
+**The universal bridge for AI agents: translate protocols and schemas instantly to enable seamless cross-vendor collaboration.**
+
+[![Works with MCP](https://img.shields.io/badge/Works_with-MCP-blue)](https://modelcontextprotocol.io)
+[![Works with A2A](https://img.shields.io/badge/Works_with-A2A-green)](#)
+[![Works with ACP](https://img.shields.io/badge/Works_with-ACP-orange)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A middleware service that acts as a bridge between AI agents using different communication protocols (A2A, MCP, ACP). It translates the protocol envelope and resolves semantic differences in the data payload so agents can interact regardless of their native protocol.
 
 ## Why Agent Translator Middleware?
+
+| Scenario | Without Translator | With Translator |
+| :--- | :--- | :--- |
+| **Agent Interop** | Isolated silos; MCP agents can't talk to ACP agents. | **Seamless Relay:** A2A ↔ MCP ↔ ACP communication. |
+| **Data Mapping** | Manual re-coding for every new agent pair. | **Auto-Mapping:** Owlready2 + PyDatalog resolve field differences. |
+| **Task Handoff** | Fails due to incompatible envelope structures. | **Robust Orchestration:** Multi-hop routing with retry logic. |
 
 AI agents today are often isolated because they speak different protocols (MCP, ACP, native A2A) and use differing data schemas. This middleware acts as a universal translator, allowing an MCP-based agent to seamlessly hand off a task to an ACP-based agent without either needing to change their underlying code.
 
@@ -112,6 +125,16 @@ curl -X POST http://localhost:8000/api/v1/translate \
 
 ---
 
+## Performance
+
+Built for high-throughput, low-latency agent handoffs. Based on our [JMeter load tests](PERF_TESTING.md):
+
+*   **Low Latency:** p50 ≤ 120 ms, p95 ≤ 300 ms, p99 ≤ 600 ms (tested on local Docker stack).
+*   **High Throughput:** Handles ≥ 150 requests/sec sustained for 5 minutes.
+*   **Rock Solid:** ≤ 1% error rate and ≤ 80% CPU utilization under peak load.
+
+---
+
 ## Configuration
 
 Configuration is managed via environment variables. Create a `.env` file in the root directory for local overrides. 
@@ -164,8 +187,9 @@ We run unit tests on every pull request and push to `main` via GitHub Actions, a
 
 ---
 
-## Documentation
+## Documentation & Links
 
+*   🌐 **Website:** [useengram.com](https://useengram.com)
 *   [Architecture (ARCHITECTURE.md)](ARCHITECTURE.md): System components, data silos resolution, and overall architecture.
 *   [Deployment (DEPLOYMENT.md)](DEPLOYMENT.md): Instructions for deploying to Render and Cloud Run.
 
@@ -173,6 +197,7 @@ We run unit tests on every pull request and push to `main` via GitHub Actions, a
 
 ## What's Next?
 
+*   **Try the Live Playground:** Host a tiny live playground on GitHub Pages or Replit that lets people paste two agent JSONs and see the translation instantly. You already have the API — just wrap it!
 *   **Explore the API:** Once running, visit `http://localhost:8000/docs` to interact with the full Swagger UI.
 *   **Customize Semantics:** Define your own custom semantic mapping rules (OWL/PyDatalog) to handle specific data structures required by your proprietary agents.
 *   **Contribute:** Check the [Architecture](ARCHITECTURE.md) to understand the internals and start contributing to the core orchestration engine.
