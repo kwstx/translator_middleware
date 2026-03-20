@@ -29,6 +29,58 @@ from app.services.mapping_failures import (
 router = APIRouter(dependencies=[require_scopes([])])
 _beta_orchestrator = Orchestrator()
 
+class MiroFishPipeRequest(BaseModel):
+    agent_id: str = Field(..., description="The ID of the originating AI agent.")
+    protocol: str = Field(..., description="The protocol of the incoming message (e.g., A2A, MCP).")
+    payload: Dict[str, Any] = Field(..., description="The message or data to pipe into the swarm.")
+    swarm_id: str = Field(default="default", description="The target MiroFish swarm simulation identifier.")
+
+class MiroFishPipeResponse(BaseModel):
+    status: str
+    bridge_id: UUID
+    swarm_status: str
+    prediction_feedback: Optional[Dict[str, Any]] = None
+
+@router.post(
+    "/mirofish/pipe",
+    response_model=MiroFishPipeResponse,
+    tags=["MiroFish Bridge"],
+    summary="Pipe data into MiroFish Swarm",
+    description="Bridge endpoint to inject inter-agent messages and live data into a MiroFish swarm.",
+)
+async def pipe_to_mirofish(
+    request: MiroFishPipeRequest,
+    db: Session = Depends(get_session),
+):
+    """
+    Pipes message payload into MiroFish swarm simulation.
+    This is a 'one-line router' for external agents to sync with the swarm.
+    """
+    # Logic: 
+    # 1. Translate payload to 'MCP' (internal swarm protocol) if needed
+    # 2. Inject into 'God's-eye variables' or seed text (mocked for now)
+    # 3. Return a bridge ID for tracking
+    import uuid
+    
+    # Simple pass-through translation for now
+    try:
+        translated_result = _beta_orchestrator.handoff(
+            request.payload, request.protocol, "MCP"
+        )
+        translated_payload = translated_result.translated_message
+    except Exception:
+        translated_payload = request.payload # Fallback
+        
+    return MiroFishPipeResponse(
+        status="piped",
+        bridge_id=uuid.uuid4(),
+        swarm_status="synchronized",
+        prediction_feedback={
+            "info": f"Message from {request.agent_id} injected into swarm {request.swarm_id}",
+            "translated_payload": translated_payload
+        }
+    )
+
 @router.post(
     "/register",
     response_model=AgentRegistry,

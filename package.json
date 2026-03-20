@@ -2,11 +2,15 @@
   "name": "translator-middleware-e2e",
   "private": true,
   "devDependencies": {
+    "concurrently": "^8.2.2",
     "cypress": "^13.13.1",
     "jsonwebtoken": "^9.0.2"
   },
   "scripts": {
     "cypress:open": "cypress open",
-    "cypress:run": "cypress run"
+    "cypress:run": "cypress run",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "uvicorn app.main:app --port 5001 --reload",
+    "dev:frontend": "cd playground && npm run dev"
   }
 }

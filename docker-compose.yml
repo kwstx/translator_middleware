@@ -4,12 +4,24 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "5001:5001"
+    environment:
+      - PORT=5001
     env_file:
       - .env
     depends_on:
       - db
       - redis
+    networks:
+      - agent_network
+
+  frontend:
+    build:
+      context: ./playground
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app
     networks:
       - agent_network
 
@@ -47,7 +59,7 @@ services:
   grafana:
     image: grafana/grafana:10.4.2
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

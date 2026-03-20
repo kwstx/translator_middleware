@@ -35,7 +35,7 @@ const DEFAULT_INPUT = `{
 }`
 
 const DEFAULT_API_BASE =
-  import.meta.env.VITE_PLAYGROUND_API_BASE ?? 'http://localhost:8000'
+  import.meta.env.VITE_PLAYGROUND_API_BASE ?? 'http://localhost:5001'
 const DEFAULT_ENDPOINT =
   import.meta.env.VITE_PLAYGROUND_ENDPOINT ?? '/api/v1/beta/playground/translate'
 
