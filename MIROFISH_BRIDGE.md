@@ -107,3 +107,66 @@ All payloads are run through the existing `TranslatorEngine` translation layer b
 | `app/messaging/orchestrator.py` | Orchestrator conditional: `if tgt == "MIROFISH"` |
 | `app/core/config.py` | `MIROFISH_BASE_URL`, `MIROFISH_DEFAULT_NUM_AGENTS`, `MIROFISH_DEFAULT_SWARM_ID` |
 | `playground/src/mirofish-bridge.ts` | TypeScript `engram.routeTo('mirofish', ...)` one-liner |
+| `tests/integration/test_mirofish_e2e.py` | Step 10 E2E test — full predict + execute hybrid loop |
+
+## Step 10 — End-to-End Testing
+
+Thorough E2E validation of the completed bridge.  The test spins up a **mock MiroFish backend**, creates a sample OpenClaw agent, sends a real-shaped trading signal with live context data through the Orchestrator, and verifies every layer of the pipeline.
+
+### What Gets Verified
+
+| # | Check | Detail |
+|---|---|---|
+| 1 | Mock MiroFish Instance | A standalone FastAPI server emulates `POST /api/simulation/start` on a random free port |
+| 2 | OpenClaw Agent Creation | A `ClawBot-Alpha` agent is instantiated with the builder pattern |
+| 3 | Trading Signal Message | Builds an A2A-envelope message with prices (BTC, ETH, SOL), sentiment (X + Reuters), and headlines |
+| 4 | Orchestrator Routing | `handoff_async(target_protocol="mirofish")` routes through `pipe_to_mirofish_swarm` |
+| 5 | Semantic Fidelity | Asserts every price, sentiment score, and headline arrives at MiroFish without drift |
+| 6 | Prediction Return | Validates the compiled simulation report flows back into the `HandoffResult` |
+| 7 | Trade Execution | Simulates placing a Polymarket trade from the `execution_recommendation` output |
+| 8 | Cycle Timing | Asserts the full loop completes in **< 60 seconds** |
+
+### Prerequisites
+
+> **The test does NOT require a live MiroFish instance or LLM key.**  It uses a built-in mock server so any developer can run it locally without extra setup.
+
+### Running the Test
+
+**Standalone** (no pytest needed):
+
+```bash
+$env:PYTHONPATH="."
+python tests/integration/test_mirofish_e2e.py
+```
+
+**Via pytest** (picked up by `pytest -m integration`):
+
+```bash
+pytest tests/integration/test_mirofish_e2e.py -v
+```
+
+### Against a Real MiroFish Instance
+
+To validate against your own MiroFish instance instead of the mock:
+
+1. Launch your MiroFish instance with your `LLM_API_KEY` in its `.env`.
+2. Set `MIROFISH_BASE_URL` in `translator_middleware/.env` to point to your instance.
+3. Modify the test to skip mock server startup and use your real URL.
+
+### Sample Output
+
+```
+======================================================================
+  1/8  Launching mock MiroFish instance
+======================================================================
+  ✓ Mock MiroFish running at http://127.0.0.1:54321
+  ✓ Health probe OK
+  ...
+======================================================================
+  8/8  Cycle timing
+======================================================================
+  Total cycle time: 1.24s
+  ✓ Under 60-second target ✓
+  ...
+🎉  MiroFish Bridge E2E test PASSED
+```

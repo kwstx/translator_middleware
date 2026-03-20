@@ -1,0 +1,86 @@
+﻿
+======================================================================
+  1/8  Launching mock MiroFish instance
+======================================================================
+  [OK] Mock MiroFish running at http://127.0.0.1:62522
+  [OK] Health probe OK
+
+======================================================================
+  2/8  Creating sample OpenClaw agent
+======================================================================
+  [OK] Agent 'ClawBot-Alpha' created  (id=39a34270-865c-4ea1-996b-e5d1663aaddd)
+
+======================================================================
+  3/8  Building inter-agent trading signal
+======================================================================
+  [OK] Message built (id=msg-30545952)
+    Signal : BTC 7-day forecast: analyse ETF flow impact and on-chain accumulation patterns. ...
+    Prices : 3 assets
+    Swarm  : prediction-market-btc-7d  (500 agents)
+
+======================================================================
+  4/8  Routing through Orchestrator -> MiroFish bridge
+======================================================================
+2026-03-20 15:28:10 [debug    ] ProtocolGraph edge added       source_protocol=A2A target_protocol=MCP weight=1.0
+2026-03-20 15:28:10 [info     ] ProtocolGraph built            edge_count=1 node_count=2
+2026-03-20 15:28:10 [info     ] Handoff async: routing to MiroFish swarm bridge source_protocol=A2A
+2026-03-20 15:28:10 [info     ] Translating message            source_protocol=A2A target_protocol=MCP
+2026-03-20 15:28:10 [warning  ] No source version found; skipping version normalization expected_version=2 source_protocol=A2A
+2026-03-20 15:28:10 [info     ] MiroFish router: payload normalised source_protocol=A2A target_protocol=MCP
+2026-03-20 15:28:10 [info     ] MiroFish router: sending to swarm endpoint=http://127.0.0.1:62522/api/simulation/start num_agents=500 swarm_id=prediction-market-btc-7d
+2026-03-20 15:28:10 [info     ] MiroFish router: simulation response received status=completed swarm_id=prediction-market-btc-7d
+  [OK] Handoff complete
+    Route       : A2A -> MIROFISH
+    Total weight: 0.0
+
+======================================================================
+  5/8  Verifying semantic fidelity (zero drift)
+======================================================================
+  [OK] Signal text preserved in seedText
+  [OK] All 3 prices forwarded without drift
+  [OK] All 2 sentiment scores forwarded without drift
+  [OK] All 3 headlines forwarded without drift
+  [OK] numAgents=500, swarmId=prediction-market-btc-7d -- correct
+
+======================================================================
+  6/8  Validating prediction output returned to agent
+======================================================================
+  [OK] Report received by agent 'ClawBot-Alpha'
+    Status     : completed
+    Direction  : bullish
+    Confidence : 0.87
+    Target     : $68,500.00
+    Timeframe  : 7d
+  [OK] Execution recommendation: BUY on polymarket (BTC-7D-UP)
+
+======================================================================
+  7/8  Executing Polymarket trade from prediction
+======================================================================
+  [OK] Trade EXECUTED
+    Trade ID : trade-fcec7b78
+    Market   : polymarket
+    Asset    : BTC-7D-UP
+    Action   : BUY
+    Size     : 15%
+
+======================================================================
+  8/8  Cycle timing
+======================================================================
+  Total cycle time: 1.63s
+  [OK] Under 60-second target
+
+======================================================================
+  E2E SUMMARY
+======================================================================
+  All checks passed:
+    [OK] Mock MiroFish instance launched & healthy
+    [OK] OpenClaw agent created & message built
+    [OK] Orchestrator routed A2A -> MIROFISH
+    [OK] Semantic fidelity: prices, sentiments, headlines -- zero drift
+    [OK] Prediction report returned to originating agent
+    [OK] Polymarket trade executed from prediction output
+    [OK] Full cycle completed in 1.63s (< 60s)
+
+
+>>>  MiroFish Bridge E2E test PASSED  <<<
+
