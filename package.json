@@ -12,5 +12,10 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "uvicorn app.main:app --port 5001 --reload",
     "dev:frontend": "cd playground && npm run dev"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "ccxt": "^4.5.44",
+    "dotenv": "^17.3.1"
   }
 }
