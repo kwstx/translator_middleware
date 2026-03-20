@@ -107,6 +107,7 @@ All payloads are run through the existing `TranslatorEngine` translation layer b
 | `app/messaging/orchestrator.py` | Orchestrator conditional: `if tgt == "MIROFISH"` |
 | `app/core/config.py` | `MIROFISH_BASE_URL`, `MIROFISH_DEFAULT_NUM_AGENTS`, `MIROFISH_DEFAULT_SWARM_ID` |
 | `playground/src/mirofish-bridge.ts` | TypeScript `engram.routeTo('mirofish', ...)` one-liner |
+| `playground/src/engram-sdk.ts` | Engram SDK config loader + adapter registry |
 | `tests/integration/test_mirofish_e2e.py` | Step 10 E2E test — full predict + execute hybrid loop |
 
 ## Step 10 — End-to-End Testing
@@ -170,3 +171,46 @@ To validate against your own MiroFish instance instead of the mock:
   ...
 🎉  MiroFish Bridge E2E test PASSED
 ```
+
+## Step 11 - Native Plugin Packaging (Drop-In Engram Adapter)
+
+The final step is packaging the MiroFish bridge as a **drop-in plugin** inside the Engram distribution. We do that by updating the main configuration loader to auto-register `pipeToMiroFishSwarm` under a new `mirofish` adapter key, and exposing it as a one-line toggle in the SDK or dashboard.
+
+### SDK Config Loader (One-Line Toggle)
+
+```ts
+import { loadEngramConfig } from './engram-sdk';
+
+const engram = loadEngramConfig({
+  enableMiroFishBridge: true,
+  mirofishBaseUrl: 'http://localhost:5001',
+  swarmId: 'prediction-market-1',
+  defaultAgentCount: 1000,
+});
+
+// Later, anywhere in your agent flow:
+const report = await engram.routeTo(
+  'mirofish',
+  'Analyse upcoming ETH merge impact',
+);
+```
+
+### Required Setting
+
+- `mirofishBaseUrl` is **required** when `enableMiroFishBridge: true`. The loader will throw an error if it is missing.
+
+### Optional Settings
+
+- `swarmId` (default: `default`)
+- `defaultAgentCount` (default: `1000`)
+
+### Onboarding Requirement (No Shared Keys)
+
+Every user must run **their own** MiroFish instance locally and supply **their personal LLM key** in that instance's `.env`:
+
+1. Start MiroFish locally:
+   - `npm run dev`
+   - or `docker compose up -d`
+2. Add your personal LLM key to the MiroFish `.env` as `LLM_API_KEY=...`
+
+This ensures any builder following the original Polymarket guide can activate **full swarm synchronization instantly**, without writing additional code or sharing keys with you.

@@ -263,6 +263,96 @@
   color: #4b4b4b;
 }
 
+.bridge {
+  display: grid;
+}
+
+.bridge-panel {
+  gap: 16px;
+}
+
+.bridge-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bridge-grid .control {
+  grid-column: span 3;
+}
+
+.bridge-grid .control.wide {
+  grid-column: span 6;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1b1b1b;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #1b1b1b;
+  background: #fff;
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1b1b1b;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: #1b1b1b;
+}
+
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(20px);
+  background: #fff;
+}
+
+.bridge-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bridge-status {
+  font-size: 0.85rem;
+  color: #4b4b4b;
+}
+
+.bridge-error {
+  color: #9c1a0b;
+}
+
+.bridge-footnote {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6a6a6a;
+}
+
 @media (max-width: 1100px) {
   .app {
     height: auto;
@@ -298,6 +388,18 @@
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .bridge-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .bridge-grid .control {
+    grid-column: span 3;
+  }
+
+  .bridge-grid .control.wide {
+    grid-column: span 6;
+  }
 }
 
 @media (max-width: 720px) {
@@ -311,5 +413,13 @@
 
   .top-actions {
     flex-wrap: wrap;
+  }
+
+  .bridge-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .bridge-grid .control {
+    grid-column: span 4;
   }
 }

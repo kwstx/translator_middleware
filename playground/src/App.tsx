@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { DiffEditor, Editor } from '@monaco-editor/react'
 import axios from 'axios'
 import './App.css'
+import { loadEngramConfig } from './engram-sdk'
 
 type PlaygroundState = {
   sourceProtocol: string
@@ -142,6 +143,16 @@ function App() {
   const [mappingSuggestions, setMappingSuggestions] = useState<MappingSuggestion[]>([])
   const [isTranslating, setIsTranslating] = useState(false)
   const [shareStatus, setShareStatus] = useState<string | null>(null)
+  const [enableMiroFishBridge, setEnableMiroFishBridge] = useState(false)
+  const [mirofishBaseUrl, setMirofishBaseUrl] = useState('http://localhost:5001')
+  const [mirofishSwarmId, setMirofishSwarmId] = useState('default')
+  const [mirofishDefaultAgentCount, setMirofishDefaultAgentCount] = useState('1000')
+  const [mirofishMessage, setMirofishMessage] = useState(
+    'Analyse upcoming ETH merge impact'
+  )
+  const [mirofishStatus, setMirofishStatus] = useState<string | null>(null)
+  const [mirofishError, setMirofishError] = useState<string | null>(null)
+  const [isMirofishSending, setIsMirofishSending] = useState(false)
 
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -178,6 +189,26 @@ function App() {
     }
     return collectDiffPaths(leftParsed.value, rightParsed.value).slice(0, 6)
   }, [formattedInput, outputText])
+
+  const mirofishAgentCount = useMemo(() => {
+    const parsed = Number.parseInt(mirofishDefaultAgentCount, 10)
+    return Number.isFinite(parsed) ? parsed : 1000
+  }, [mirofishDefaultAgentCount])
+
+  const mirofishSdk = useMemo(() => {
+    if (!enableMiroFishBridge) {
+      return null
+    }
+    if (!mirofishBaseUrl.trim()) {
+      return null
+    }
+    return loadEngramConfig({
+      enableMiroFishBridge: true,
+      mirofishBaseUrl: mirofishBaseUrl.trim(),
+      swarmId: mirofishSwarmId.trim() || 'default',
+      defaultAgentCount: mirofishAgentCount,
+    })
+  }, [enableMiroFishBridge, mirofishBaseUrl, mirofishSwarmId, mirofishAgentCount])
 
   const handleTranslate = async () => {
     setErrorMessage(null)
@@ -261,6 +292,55 @@ function App() {
     }
   }
 
+  const handleMirofishSend = async () => {
+    setMirofishError(null)
+    setMirofishStatus(null)
+
+    if (!enableMiroFishBridge) {
+      setMirofishError('Enable the MiroFish bridge to send a message.')
+      return
+    }
+
+    if (!mirofishBaseUrl.trim()) {
+      setMirofishError('mirofishBaseUrl is required when the bridge is enabled.')
+      return
+    }
+
+    if (!mirofishSdk) {
+      setMirofishError('Bridge is not configured yet.')
+      return
+    }
+
+    try {
+      setIsMirofishSending(true)
+      const response = await mirofishSdk.routeTo(
+        'mirofish',
+        mirofishMessage.trim() || 'Ping',
+        {
+          mirofishBaseUrl: mirofishBaseUrl.trim(),
+          swarmId: mirofishSwarmId.trim() || 'default',
+          defaultAgentCount: mirofishAgentCount,
+        }
+      )
+      setMirofishStatus(
+        `Bridge complete • swarm "${mirofishSwarmId.trim() || 'default'}"`
+      )
+      setOutputText(JSON.stringify(response ?? { status: 'ok' }, null, 2))
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        setMirofishError(
+          error.response?.data?.detail ??
+            error.response?.data?.message ??
+            error.message
+        )
+      } else {
+        setMirofishError('Unexpected error while calling the bridge')
+      }
+    } finally {
+      setIsMirofishSending(false)
+    }
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -323,6 +403,82 @@ function App() {
             placeholder="Optional"
           />
         </label>
+      </section>
+
+      <section className="bridge">
+        <div className="panel bridge-panel">
+          <div className="panel-header">
+            <div>
+              <h2>MiroFish Bridge</h2>
+              <p>Enable the drop-in adapter and fire a one-line route.</p>
+            </div>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={enableMiroFishBridge}
+                onChange={(event) => setEnableMiroFishBridge(event.target.checked)}
+              />
+              <span className="toggle-track" aria-hidden="true"></span>
+              <span className="toggle-label">
+                {enableMiroFishBridge ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+          </div>
+          <div className="bridge-grid">
+            <label className="control">
+              <span>mirofishBaseUrl</span>
+              <input
+                value={mirofishBaseUrl}
+                onChange={(event) => setMirofishBaseUrl(event.target.value)}
+                placeholder="http://localhost:5001"
+              />
+            </label>
+            <label className="control">
+              <span>swarmId</span>
+              <input
+                value={mirofishSwarmId}
+                onChange={(event) => setMirofishSwarmId(event.target.value)}
+                placeholder="default"
+              />
+            </label>
+            <label className="control">
+              <span>defaultAgentCount</span>
+              <input
+                value={mirofishDefaultAgentCount}
+                onChange={(event) => setMirofishDefaultAgentCount(event.target.value)}
+                placeholder="1000"
+              />
+            </label>
+            <label className="control wide">
+              <span>Message</span>
+              <input
+                value={mirofishMessage}
+                onChange={(event) => setMirofishMessage(event.target.value)}
+                placeholder="Analyse upcoming ETH merge impact"
+              />
+            </label>
+          </div>
+          <div className="bridge-actions">
+            <button
+              className="primary"
+              onClick={handleMirofishSend}
+              disabled={isMirofishSending}
+            >
+              {isMirofishSending ? 'Sending...' : 'Send To Swarm'}
+            </button>
+            <div className="bridge-status">
+              {mirofishStatus && <span>{mirofishStatus}</span>}
+              {mirofishError && <span className="bridge-error">{mirofishError}</span>}
+              {!mirofishStatus && !mirofishError && (
+                <span>Toggle to enable the adapter.</span>
+              )}
+            </div>
+          </div>
+          <p className="bridge-footnote">
+            Each user must run their own MiroFish instance locally and set
+            `LLM_API_KEY` in that instance&apos;s `.env`.
+          </p>
+        </div>
       </section>
 
       <section className="workspace">
