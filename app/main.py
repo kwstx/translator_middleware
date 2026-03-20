@@ -42,16 +42,16 @@ task_worker = TaskWorker()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB (create tables if they don't exist)
-    await init_db()
+    # await init_db()
     # Start Discovery Service
-    await discovery_service.start_periodic_discovery()
+    # await discovery_service.start_periodic_discovery()
     # Start Task Worker
-    await task_worker.start()
+    # await task_worker.start()
     yield
     # Stop Task Worker
-    await task_worker.stop()
+    # await task_worker.stop()
     # Stop Discovery Service
-    await discovery_service.stop_periodic_discovery()
+    # await discovery_service.stop_periodic_discovery()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
