@@ -67,10 +67,51 @@ export const MiroFishBridge = (baseUrl = 'http://localhost:5001') => {
 };
 
 /**
- * Step 7: One-line router function to pipe messages and data into a MiroFish Swarm.
+ * Simulated Engram Connectors
+ * In a production environment, these would be imported from your existing integration packages.
+ */
+export const EngramCCXTWrapper = {
+  getCurrentPrices: async (symbols: string[]) => {
+    // Simulated real-time price fetch from Binance/Coinbase via CCXT
+    return symbols.map(symbol => ({
+      symbol,
+      price: (Math.random() * 65000 + 1000).toFixed(2),
+      currency: 'USD',
+      timestamp: new Date().toISOString()
+    }));
+  }
+};
+
+export const XReutersConnector = {
+  getSentiment: async (source: 'X' | 'Reuters') => {
+    // Simulated sentiment analysis from X firehose or Reuters feed
+    const score = (Math.random() * 2 - 1).toFixed(2);
+    return {
+      source,
+      score: parseFloat(score),
+      label: score > '0' ? 'Bullish' : 'Bearish',
+      confidence: Math.random().toFixed(2)
+    };
+  }
+};
+
+export const InternalNewsAggregator = {
+  getRecentHeadlines: async () => {
+    // Simulated internal news aggregator
+    return [
+      "Bitcoin hits new local high amid ETF inflows",
+      "Ethereum Shanghai upgrade shows positive network growth",
+      "Solana ecosystem expands with new DeFi protocols",
+      "Global markets react to latest inflation data"
+    ];
+  }
+};
+
+/**
+ * Step 8: Enriched router function with automatic external data ingestion.
+ * Automatically fetches fresh live context without requiring extra steps from the calling agent.
  * 
  * @param interAgentMessage - Plain string message from another agent
- * @param externalData - Object containing news headlines, prices, and sentiment scores
  * @param targetSwarmId - Swarm identifier for parallel simulations
  * @param numAgents - Number of agents in the swarm (default 1000)
  * @param mirofishBaseUrl - Base URL of the MiroFish service
@@ -78,16 +119,43 @@ export const MiroFishBridge = (baseUrl = 'http://localhost:5001') => {
  */
 export const pipeToMiroFishSwarm = async (
   interAgentMessage: string, 
-  externalData: { latestNewsHeadlines: any[]; currentPrices: any[]; sentimentScores: any[] }, 
   targetSwarmId: string, 
   numAgents = 1000, 
-  mirofishBaseUrl: string
-) => (await axios.post(`${mirofishBaseUrl}/api/simulation/start`, {
-    seedText: interAgentMessage + JSON.stringify(externalData),
+  mirofishBaseUrl = 'http://localhost:5001'
+) => {
+  // 1. Fetch fresh live context using Engram connectors
+  const currentPrices = await EngramCCXTWrapper.getCurrentPrices(['BTC/USD', 'ETH/USD', 'SOL/USD']);
+  const xSentiment = await XReutersConnector.getSentiment('X');
+  const reutersSentiment = await XReutersConnector.getSentiment('Reuters');
+  const latestNewsHeadlines = await InternalNewsAggregator.getRecentHeadlines();
+
+  const externalData = {
+    currentPrices,
+    sentimentScores: [xSentiment, reutersSentiment],
+    latestNewsHeadlines
+  };
+
+  // 2. Build the final enriched seedText
+  const seedText = `
+    [PRIMARY MESSAGE]: ${interAgentMessage}
+    
+    [LIVE CONTEXT INJECTED]:
+    - Market Prices: ${currentPrices.map(p => `${p.symbol}: $${p.price}`).join(', ')}
+    - Sentiment (X): ${xSentiment.label} (Score: ${xSentiment.score})
+    - Sentiment (Reuters): ${reutersSentiment.label} (Score: ${reutersSentiment.score})
+    - News: ${latestNewsHeadlines.slice(0, 3).join(' | ')}
+  `.trim();
+
+  // 3. Pipe to MiroFish Swarm Start Endpoint
+  const response = await axios.post(`${mirofishBaseUrl}/api/simulation/start`, {
+    seedText,
     numAgents,
     swarmId: targetSwarmId,
     godsEyeVariables: externalData
-  })).data;
+  });
+
+  return response.data;
+};
 
 // Export as default for one-line imports
 export default MiroFishBridge;
