@@ -1,0 +1,57 @@
+﻿[dotenv@17.3.1] injecting env (44) from .env -- tip: ΏθΦΡ encrypt with Dotenvx: https://dotenvx.com
+=== Engram Feeds Enrichment Integration Test ===
+
+[TEST 1] Pulling recent X posts...
+
+[Engram Router] Routing to platform: feeds via C:\Users\galan\translator_middleware\trading-templates\adapters\feeds-adapter.js
+[dotenv@17.3.1] injecting env (0) from .env -- tip: έγβΎ╕Π  override existing env vars with { override: true }
+[MOCK REQUEST] Intercepting GET (No Key): https://api.x.com/2/tweets/search/recent?query=Bitcoin%20price%20sentiment
+[Engram Router] Successfully executed feeds adapter.
+X Result - Source: x
+X Result - Data Count: 0
+
+[TEST 2] Pulling FRED GDP observations...
+
+[Engram Router] Routing to platform: feeds via C:\Users\galan\translator_middleware\trading-templates\adapters\feeds-adapter.js
+[MOCK REQUEST] Intercepting GET (No Key): https://api.stlouisfed.org/fred/series/observations?series_id=GDP&api_key=your_fred_api_key_here&file_type=json
+[Engram Router] Successfully executed feeds adapter.
+FRED Result - Source: fred
+FRED Result - Data Point 0: No data
+
+[TEST 3] Pulling Reuters headlines (Mocked/Restricted)...
+
+[Engram Router] Routing to platform: feeds via C:\Users\galan\translator_middleware\trading-templates\adapters\feeds-adapter.js
+Reuters placeholder called for query: Federal Reserve rate cut
+[Engram Router] Successfully executed feeds adapter.
+Reuters Result: {
+  "source": "reuters",
+  "status": "placeholder",
+  "message": "Reuters integration requires an enterprise license and institutional partner key."
+}
+
+[TEST 4] Simulating combined enrichment (Enrich + Trade)...
+[Enrichment] Combined payload detected. Fetching from x...
+
+[Engram Router] Routing to platform: feeds via C:\Users\galan\translator_middleware\trading-templates\adapters\feeds-adapter.js
+[MOCK REQUEST] Intercepting GET (No Key): https://api.x.com/2/tweets/search/recent?query=BTC%20sentiment
+[Engram Router] Successfully executed feeds adapter.
+[Enrichment] Enrichment complete. Context received.
+[Execution] Routing trade to binance...
+
+[FINAL ENRICHED PACKAGE]:
+{
+  "status": "success",
+  "platform": "binance",
+  "result": {
+    "status": "mocked_trade_success",
+    "platform": "binance"
+  },
+  "enrichedContext": {
+    "source": "x",
+    "data": [],
+    "metadata": {}
+  },
+  "timestamp": "2026-03-21T10:53:28.713Z"
+}
+
+=== Integration Test PASSED: Feeds and Enrichment verified ===

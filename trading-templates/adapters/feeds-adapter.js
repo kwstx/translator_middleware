@@ -18,7 +18,12 @@ async function getXFirehose(unifiedFeed, userConfig) {
       Authorization: `Bearer ${userConfig.X_BEARER_TOKEN}`,
     },
   });
-  return response.data;
+  // Normalize response
+  return {
+    source: 'x',
+    data: response.data.data || [],
+    metadata: response.data.meta || {}
+  };
 }
 
 /**
@@ -32,7 +37,16 @@ async function getXFirehose(unifiedFeed, userConfig) {
 async function getFREDIndicator(unifiedFeed, userConfig) {
   const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${unifiedFeed.query}&api_key=${userConfig.FRED_API_KEY}&file_type=json`;
   const response = await axios.get(url);
-  return response.data;
+  // Normalize response
+  return {
+    source: 'fred',
+    data: response.data.observations || [],
+    metadata: {
+      realtime_start: response.data.realtime_start,
+      realtime_end: response.data.realtime_end,
+      count: response.data.count
+    }
+  };
 }
 
 /**

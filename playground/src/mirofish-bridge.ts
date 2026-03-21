@@ -233,27 +233,32 @@ export const engram = {
       const userConfig = options.apiKey || options.secret ? options : (engram._tradingConfigs[platform] || {});
       
       try {
+        let enrichedContext = null;
+        if (payload.feedRequest) {
+          console.log(`[Engram] Combined payload detected. Enriching from ${payload.feedRequest.source}...`);
+          const feedsAdapter = await import(`../../trading-templates/adapters/feeds-adapter.js`);
+          enrichedContext = await feedsAdapter.mapAndExecuteFeeds(payload.feedRequest, userConfig);
+          console.log(`[Engram] Context enriched with ${enrichedContext.data.length} data points.`);
+        }
+
         /**
          * Dynamic adapter loading. 
-         * Note: In a Vite environment, these paths must be resolved at build time or 
-         * configured via glob imports. For this Step 10 implementation, we assume 
-         * the environment supports dynamic resolution of the adapter suite.
          */
-        // @ts-ignore - Dynamic import of CommonJS adapters in Step 10 context
         const adapter = await import(`../../trading-templates/adapters/${platform}-adapter.js`);
         
         let methodName = `mapAndExecute${platform.charAt(0).toUpperCase() + platform.slice(1)}`;
         if (platform === 'paypal') methodName = 'mapAndExecutePayPal';
 
-        const result = await adapter[methodName](payload, userConfig);
+        const rawPayload = payload.tradeOrder || payload;
+        const result = await adapter[methodName](rawPayload, userConfig);
         
         console.log(`[Engram] Successfully executed ${platform} trade via unified schema.`);
         
-        // Then forward the normalized result back via your translation layer (simulated callback)
         return {
           status: 'success',
           platform,
           result,
+          enrichedContext,
           timestamp: new Date().toISOString()
         };
       } catch (error: any) {

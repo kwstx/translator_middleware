@@ -18,5 +18,10 @@ module.exports = {
     source: 'x | fred | reuters',
     query: 'string',
     limit: 'number'
+  },
+  feedResponse: {
+    source: 'string',
+    data: 'array',
+    metadata: 'object'
   }
 };
