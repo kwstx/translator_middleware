@@ -153,6 +153,25 @@ function App() {
   const [mirofishStatus, setMirofishStatus] = useState<string | null>(null)
   const [mirofishError, setMirofishError] = useState<string | null>(null)
   const [isMirofishSending, setIsMirofishSending] = useState(false)
+  const [enableTradingTemplates, setEnableTradingTemplates] = useState(true)
+  const [activePlatforms, setActivePlatforms] = useState<Record<string, boolean>>({
+    binance: false,
+    coinbase: false,
+    kalshi: false,
+    robinhood: false,
+    stripe: false,
+    paypal: false,
+    feeds: false,
+  })
+  const [platformKeys, setPlatformKeys] = useState<Record<string, Record<string, string>>>({
+    binance: { apiKey: '', secret: '' },
+    coinbase: { apiKey: '', secret: '' },
+    kalshi: { apiKey: '', secret: '' },
+    robinhood: { apiKey: '', secret: '' },
+    stripe: { secret: '' },
+    paypal: { clientId: '', secret: '' },
+    feeds: { xBearerToken: '', fredApiKey: '', reutersAppKey: '', bloombergServiceId: '' },
+  })
 
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -209,6 +228,24 @@ function App() {
       defaultAgentCount: mirofishAgentCount,
     })
   }, [enableMiroFishBridge, mirofishBaseUrl, mirofishSwarmId, mirofishAgentCount])
+
+  const tradingSdk = useMemo(() => {
+    const sdk = loadEngramConfig({ enableMiroFishBridge })
+    if (enableTradingTemplates) {
+      Object.entries(activePlatforms).forEach(([platform, active]) => {
+        if (active) {
+          sdk.tradingTemplates.enable(platform, platformKeys[platform])
+        }
+      })
+    }
+    return sdk
+  }, [enableTradingTemplates, activePlatforms, platformKeys, enableMiroFishBridge])
+
+  useEffect(() => {
+    if (enableTradingTemplates) {
+      console.log('[Engram] SDK initialized with trading templates:', tradingSdk.tradingTemplates.getConfigs())
+    }
+  }, [tradingSdk, enableTradingTemplates])
 
   const handleTranslate = async () => {
     setErrorMessage(null)
@@ -406,6 +443,66 @@ function App() {
       </section>
 
       <section className="bridge">
+        <div className="panel bridge-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Trading Templates</h2>
+              <p>Native multi-platform connectivity via engram.tradingTemplates.</p>
+            </div>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={enableTradingTemplates}
+                onChange={(event) => setEnableTradingTemplates(event.target.checked)}
+              />
+              <span className="toggle-track" aria-hidden="true"></span>
+              <span className="toggle-label">
+                {enableTradingTemplates ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+          </div>
+          {enableTradingTemplates && (
+            <div className="trading-templates-grid">
+              {Object.keys(activePlatforms).map((platform) => (
+                <div key={platform} className="platform-card">
+                  <div className="platform-card-header">
+                    <h4>{platform}</h4>
+                    <input
+                      type="checkbox"
+                      checked={activePlatforms[platform]}
+                      onChange={(e) =>
+                        setActivePlatforms((prev) => ({ ...prev, [platform]: e.target.checked }))
+                      }
+                    />
+                  </div>
+                  {activePlatforms[platform] && (
+                    <div className="platform-inputs">
+                      {Object.keys(platformKeys[platform]).map((key) => (
+                        <input
+                          key={key}
+                          type="password"
+                          placeholder={key.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                          value={platformKeys[platform][key]}
+                          onChange={(e) =>
+                            setPlatformKeys((prev) => ({
+                              ...prev,
+                              [platform]: { ...prev[platform], [key]: e.target.value },
+                            }))
+                          }
+                          className="mini-input"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="bridge-footnote">
+            Platforms register automatically. Any builder can connect to multiple exchanges without rewriting schema.
+          </p>
+        </div>
+
         <div className="panel bridge-panel">
           <div className="panel-header">
             <div>

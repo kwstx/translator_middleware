@@ -1,0 +1,11 @@
+{
+  "name": "@engram/trading-templates",
+  "version": "1.0.0",
+  "description": "Multi-platform trading semantic templates for Engram",
+  "main": "index.js",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "ccxt": "^4.5.44",
+    "dotenv": "^17.3.1"
+  }
+}

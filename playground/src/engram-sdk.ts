@@ -20,6 +20,11 @@ export type EngramAdapter = (
 
 export interface EngramSDK {
   adapters: Record<string, EngramAdapter>;
+  tradingTemplates: {
+    platforms: string[];
+    enable: (platform: string, config: any) => void;
+    getConfigs: () => Record<string, any>;
+  };
   routeTo: (
     target: string,
     message: string,
@@ -68,14 +73,40 @@ export const loadEngramConfig = (config: EngramSDKConfig = {}): EngramSDK => {
     };
   }
 
+  const tradingConfigs: Record<string, any> = {};
+  const tradingTemplates = {
+    platforms: ['binance', 'coinbase', 'robinhood', 'kalshi', 'stripe', 'paypal', 'feeds'],
+    enable: (platform: string, config: any) => {
+      tradingConfigs[platform.toLowerCase()] = config;
+    },
+    getConfigs: () => tradingConfigs,
+  };
+
   return {
     adapters,
+    tradingTemplates,
     routeTo: async (
       target: string,
       message: string,
       options?: MiroFishRouteOptions,
     ) => {
-      const adapter = adapters[target.toLowerCase()];
+      const platform = target.toLowerCase();
+      if (tradingTemplates.platforms.includes(platform)) {
+        const userConfig = options?.apiKey || options?.secret ? options : (tradingConfigs[platform] || {});
+        
+        // Dynamic import logic (simulated for browser environment)
+        console.log(`[Engram] Routing to trading template: ${platform}`);
+        
+        // This would call the backend or a library that handles the heavy lifting
+        // For the playground, we can simulate the call or use the bridge
+        if (config.enableMiroFishBridge) {
+          return adapters.mirofish(message, { ...options, ...userConfig });
+        }
+        
+        return { status: 'simulated', platform, message: 'Trading template routed' };
+      }
+
+      const adapter = adapters[platform];
       if (!adapter) {
         throw new Error(
           `[Engram] Unsupported adapter: "${target}". ` +

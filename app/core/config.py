@@ -52,6 +52,23 @@ class Settings(BaseSettings):
     MIROFISH_DEFAULT_NUM_AGENTS: int = 1000
     MIROFISH_DEFAULT_SWARM_ID: str = "default"
 
+    # Trading Templates
+    TRADING_TEMPLATES_ENABLED: bool = True
+    BINANCE_API_KEY: Optional[str] = None
+    BINANCE_SECRET: Optional[str] = None
+    COINBASE_API_KEY: Optional[str] = None
+    COINBASE_SECRET: Optional[str] = None
+    KALSHI_API_KEY: Optional[str] = None
+    KALSHI_SECRET: Optional[str] = None
+    ROBINHOOD_API_KEY: Optional[str] = None
+    ROBINHOOD_SECRET: Optional[str] = None
+    STRIPE_SECRET_KEY: Optional[str] = None
+    PAYPAL_CLIENT_ID: Optional[str] = None
+    PAYPAL_SECRET: Optional[str] = None
+    X_BEARER_TOKEN: Optional[str] = None
+    FRED_API_KEY: Optional[str] = None
+    REUTERS_APP_KEY: Optional[str] = None
+    BLOOMBERG_SERVICE_ID: Optional[str] = None
     # Auth
     AUTH_ISSUER: str = "https://auth.example.com/"
     AUTH_AUDIENCE: str = "translator-middleware"

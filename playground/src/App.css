@@ -353,6 +353,49 @@
   color: #6a6a6a;
 }
 
+.trading-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.platform-card {
+  border: 1px solid #dcdcdc;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.platform-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.platform-card h4 {
+  margin: 0;
+  text-transform: capitalize;
+  font-size: 0.9rem;
+}
+
+.platform-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mini-input {
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  width: 100%;
+}
+
 @media (max-width: 1100px) {
   .app {
     height: auto;
