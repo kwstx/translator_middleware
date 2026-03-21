@@ -258,8 +258,11 @@ class Orchestrator:
                 "Handoff: routing to MiroFish swarm bridge",
                 source_protocol=src,
             )
-            mirofish_meta = source_message.get("metadata", source_message.get("meta", {}))
-            if not isinstance(mirofish_meta, dict):
+            if isinstance(source_message, dict):
+                mirofish_meta = source_message.get("metadata", source_message.get("meta", {}))
+                if not isinstance(mirofish_meta, dict):
+                    mirofish_meta = {}
+            else:
                 mirofish_meta = {}
 
             swarm_id = mirofish_meta.get("swarmId")
@@ -311,7 +314,10 @@ class Orchestrator:
                     )
                 )
 
-            record_translation_success("orchestrator", src, "MIROFISH")
+            if isinstance(mirofish_result, dict) and mirofish_result.get("status") == "error":
+                record_translation_error("orchestrator", src, "MIROFISH")
+            else:
+                record_translation_success("orchestrator", src, "MIROFISH")
             return HandoffResult(
                 translated_message=mirofish_result,
                 route=[src, "MIROFISH"],
@@ -384,8 +390,11 @@ class Orchestrator:
                 "Handoff async: routing to MiroFish swarm bridge",
                 source_protocol=src,
             )
-            mirofish_meta = source_message.get("metadata", source_message.get("meta", {}))
-            if not isinstance(mirofish_meta, dict):
+            if isinstance(source_message, dict):
+                mirofish_meta = source_message.get("metadata", source_message.get("meta", {}))
+                if not isinstance(mirofish_meta, dict):
+                    mirofish_meta = {}
+            else:
                 mirofish_meta = {}
 
             mirofish_result = await pipe_to_mirofish_swarm(
@@ -396,7 +405,10 @@ class Orchestrator:
                 mirofish_base_url=mirofish_meta.get("mirofishBaseUrl"),
                 source_protocol=src,
             )
-            record_translation_success("orchestrator", src, "MIROFISH")
+            if isinstance(mirofish_result, dict) and mirofish_result.get("status") == "error":
+                record_translation_error("orchestrator", src, "MIROFISH")
+            else:
+                record_translation_success("orchestrator", src, "MIROFISH")
             return HandoffResult(
                 translated_message=mirofish_result,
                 route=[src, "MIROFISH"],

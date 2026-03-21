@@ -19,6 +19,7 @@ import httpx
 import structlog
 
 from app.core.config import settings
+from app.core.metrics import record_translation_error
 from app.core.translator import TranslatorEngine
 
 logger = structlog.get_logger(__name__)
@@ -28,7 +29,7 @@ _normalise_engine = TranslatorEngine()
 
 
 async def pipe_to_mirofish_swarm(
-    message: Dict[str, Any],
+    message: Any,
     external_data: Optional[Dict[str, Any]] = None,
     swarm_id: Optional[str] = None,
     num_agents: Optional[int] = None,
@@ -64,11 +65,8 @@ async def pipe_to_mirofish_swarm(
     -------
     dict
         The response body from MiroFish (the compiled simulation report).
-
-    Raises
-    ------
-    httpx.HTTPStatusError
-        If MiroFish responds with a non-2xx status.
+        If MiroFish is unreachable or returns a non-2xx status, a structured
+        error payload is returned instead of raising.
     """
 
     resolved_base_url = (mirofish_base_url or settings.MIROFISH_BASE_URL).rstrip("/")
@@ -81,7 +79,7 @@ async def pipe_to_mirofish_swarm(
     #    protocol.
     # ------------------------------------------------------------------
     normalised_payload = message
-    if source_protocol and source_protocol.upper() != "MCP":
+    if source_protocol and source_protocol.upper() != "MCP" and isinstance(message, dict):
         try:
             normalised_payload = _normalise_engine.translate(
                 message, source_protocol, "MCP"
@@ -133,10 +131,30 @@ async def pipe_to_mirofish_swarm(
         num_agents=resolved_num_agents,
     )
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(endpoint, json=request_body)
-        response.raise_for_status()
-        result = response.json()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(endpoint, json=request_body)
+            response.raise_for_status()
+            result = response.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        logger.warning(
+            "MiroFish router: request failed",
+            endpoint=endpoint,
+            error=str(exc),
+        )
+        record_translation_error(
+            "mirofish",
+            source_protocol or "unknown",
+            "MIROFISH",
+        )
+        return {
+            "status": "error",
+            "error": "mirofish_request_failed",
+            "detail": str(exc),
+            "swarm_id": resolved_swarm_id,
+            "endpoint": endpoint,
+            "num_agents": resolved_num_agents,
+        }
 
     logger.info(
         "MiroFish router: simulation response received",
