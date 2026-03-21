@@ -31,15 +31,15 @@ flowchart LR
 
 *   **Protocol Translation:** Converts messages and payloads between A2A, MCP, and ACP formats.
 *   **Semantic Mapping:** Uses OWL ontologies, JSON Schema, and PyDatalog to map data fields between different agent schemas (e.g., mapping `user_info.name` to `profile.fullname`).
-*   **🐟 MiroFish Swarm Bridge:** Pipe inter-agent messages and live data directly into a MiroFish swarm simulation and receive compiled prediction reports back — turning any agent into a predict + execute hybrid. [Details ↓](#-mirofish-swarm-bridge)
-*   **💹 Trading Semantic Templates:** Drop-in, one-click adapters for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, and live data feeds (X, FRED, Reuters, Bloomberg). One unified payload, multiple platforms. [Details ↓](#-multi-platform-trading-semantic-templates)
+*   **MiroFish Swarm Bridge:** Pipe inter-agent messages and live data directly into a MiroFish swarm simulation and receive compiled prediction reports back — turning any agent into a predict + execute hybrid. [Details ↓](#-mirofish-swarm-bridge)
+*   **Trading Semantic Templates:** Drop-in, one-click adapters for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, and live data feeds (X, FRED, Reuters, Bloomberg). One unified payload, multiple platforms. [Details ↓](#-multi-platform-trading-semantic-templates)
 *   **Agent Registry & Discovery:** Agents register their supported protocols and semantic capabilities. Other agents can query the registry to discover compatible collaborators based on calculated matching scores.
 *   **Async Orchestration:** Uses task queues and worker processes to handle multi-turn agent handoffs, message leases, and retries.
 *   **Fallback Mapping:** Implements a machine learning model to suggest field mappings when default semantic rules fail.
 
 ---
 
-## 🐟 MiroFish Swarm Bridge
+##  MiroFish Swarm Bridge
 
 ### What Is It?
 
@@ -234,7 +234,7 @@ The test validates: mock MiroFish server startup → agent creation → enriched
 
 ---
 
-## 💹 Multi-Platform Trading Semantic Templates
+##  Multi-Platform Trading Semantic Templates
 
 ### What Is It?
 
