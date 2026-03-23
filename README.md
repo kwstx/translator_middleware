@@ -1,3 +1,5 @@
+![Engram Logo](assets/logo.png)
+
 # Agent Translator Middleware
 
 **The universal bridge for AI agents: translate protocols and schemas instantly to enable seamless cross-vendor collaboration.**
