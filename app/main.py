@@ -24,6 +24,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import endpoints, discovery
+from bridge.memory import router as memory_router
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.session import init_db
@@ -97,6 +98,7 @@ async def root():
 # Include API v1 routers
 app.include_router(endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(discovery.router, prefix=settings.API_V1_STR)
+app.include_router(memory_router, prefix=settings.API_V1_STR)
 
 if __name__ == "__main__":
     import threading
