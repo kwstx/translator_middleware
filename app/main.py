@@ -47,7 +47,12 @@ async def lifespan(app: FastAPI):
     app.state.task_worker = task_worker
     
     # Initialize DB (create tables if they don't exist)
-    # await init_db()
+    await init_db()
+    
+    # Auto-start background services (Orchestration Loop)
+    await discovery_service.start_periodic_discovery()
+    await task_worker.start()
+    logger.info("Engram orchestration services started automatically via lifespan.")
     
     yield
     
@@ -103,17 +108,21 @@ app.include_router(memory_router, prefix=settings.API_V1_STR)
 if __name__ == "__main__":
     import threading
     import uvicorn
+    import time
     from textual import run
     from tui.app import EngramTUI
 
-    # Run the FastAPI server in a background thread to allow the TUI to own the main thread
+    # 1. Start the FastAPI server on port 8000 in a background thread
     def start_api():
         # Running on localhost for the bridge
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error", access_log=False)
 
     api_thread = threading.Thread(target=start_api, daemon=True)
     api_thread.start()
 
-    # Launch the Engram TUI
-    # This design is heavily inspired by modern terminal agents like Claude Code
+    # Give the API a moment to spin up and bind to the port
+    time.sleep(1)
+
+    # 2. Launch the Engram TUI (owns the main thread)
+    # This design allows the CLI to be the single entrypoint for the whole runtime.
     run(EngramTUI)

@@ -9,15 +9,15 @@
 [![Works with ACP](https://img.shields.io/badge/Works_with-ACP-orange)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A middleware service that acts as a bridge between AI agents using different communication protocols (A2A, MCP, ACP). It translates the protocol envelope and resolves semantic differences in the data payload so agents can interact regardless of their native protocol.
+Agent Translator Middleware connects AI agents using different protocols (A2A, MCP, ACP). It handles protocol transformation and semantic mapping.
 
-## Why Agent Translator Middleware?
+## Rationale
 
 | Scenario | Without Translator | With Translator |
 | :--- | :--- | :--- |
-| **Agent Interop** | Isolated silos; MCP agents can't talk to ACP agents. | **Seamless Relay:** A2A ↔ MCP ↔ ACP communication. |
-| **Data Mapping** | Manual re-coding for every new agent pair. | **Auto-Mapping:** Owlready2 + PyDatalog resolve field differences. |
-| **Task Handoff** | Fails due to incompatible envelope structures. | **Robust Orchestration:** Multi-hop routing with retry logic. |
+| **Agent Interop** | Isolated silos. | A2A - MCP - ACP communication. |
+| **Data Mapping** | Manual schema mapping. | Direct semantic resolution via Owlready2. |
+| **Task Handoff** | Schema mismatch failures. | Multi-hop routing with retry logic. |
 
 AI agents today are often isolated because they speak different protocols (MCP, ACP, native A2A) and use differing data schemas. This middleware acts as a universal translator, allowing an MCP-based agent to seamlessly hand off a task to an ACP-based agent without either needing to change their underlying code.
 
@@ -33,21 +33,19 @@ flowchart LR
 
 *   **Protocol Translation:** Converts messages and payloads between A2A, MCP, and ACP formats.
 *   **Semantic Mapping:** Uses OWL ontologies, JSON Schema, and PyDatalog to map data fields between different agent schemas (e.g., mapping `user_info.name` to `profile.fullname`).
-*   **MiroFish Swarm Bridge:** Pipe inter-agent messages and live data directly into a MiroFish swarm simulation and receive compiled prediction reports back — turning any agent into a predict + execute hybrid. [Details ↓](#-mirofish-swarm-bridge)
-*   **Trading Semantic Templates:** Drop-in, one-click adapters for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, and live data feeds (X, FRED, Reuters, Bloomberg). One unified payload, multiple platforms. [Details ↓](#-multi-platform-trading-semantic-templates)
-*   **Agent Registry & Discovery:** Agents register their supported protocols and semantic capabilities. Other agents can query the registry to discover compatible collaborators based on calculated matching scores.
-*   **Async Orchestration:** Uses task queues and worker processes to handle multi-turn agent handoffs, message leases, and retries.
-*   **Fallback Mapping:** Implements a machine learning model to suggest field mappings when default semantic rules fail.
+*   **MiroFish Swarm Bridge:** Pipe inter-agent messages and live data directly into a MiroFish swarm simulation and receive compiled prediction reports back.
+*   **Trading Semantic Templates:** Standard adapters for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, and live data feeds (X, FRED, Reuters, Bloomberg).
+*   **Agent Registry & Discovery:** Registration and lookup of agent protocols and semantic capabilities based on computed compatibility scores.
+*   **Async Orchestration:** Task queues and worker processes for multi-turn agent handoffs, message leases, and retries.
+*   **Fallback Mapping:** Machine learning model for field mapping suggestions when default semantic rules are insufficient.
 
 ---
 
-##  MiroFish Swarm Bridge
+## MiroFish Swarm Bridge
 
-### What Is It?
+The **MiroFish Swarm Bridge** connects Engram's protocol translation pipeline to a [MiroFish](https://github.com/666ghj/MiroFish) simulation. Agents can pipe messages and external context into a swarm simulation and receive predictions or reports back.
 
-The **MiroFish Swarm Bridge** is a native integration layer that connects Engram's protocol translation pipeline directly to a running [MiroFish](https://github.com/666ghj/MiroFish) swarm-intelligence simulation. MiroFish is a next-generation AI prediction engine that spawns thousands of autonomous agents inside a high-fidelity digital world, and the bridge lets any AI agent (OpenClaw, Clawdbot, or any A2A/MCP/ACP-speaking agent) pipe inter-agent messages, live market data, sentiment scores, and news headlines straight into that swarm — and receive the compiled simulation report back — all in a single function call.
-
-In practical terms, this turns a simple prediction-market bot into a **real-time predict + execute hybrid system**: the agent sends a trading signal with live context → MiroFish runs a full swarm simulation → the simulation report flows back to the agent for immediate trade execution.
+This integration enables predictive trading flows where live data context is used to run a swarm simulation before trade execution.
 
 ### How It Works (Under the Hood)
 
@@ -236,13 +234,13 @@ The test validates: mock MiroFish server startup → agent creation → enriched
 
 ---
 
-##  Multi-Platform Trading Semantic Templates
+## Multi-Platform Trading Semantic Templates
 
 ### What Is It?
 
-**Trading Semantic Templates** is a drop-in extension module (`@engram/trading-templates`) that delivers pre-built, one-click adapters for major trading exchanges, prediction markets, payment rails, and live data feeds. It allows any OpenClaw or Clawdbot-style agent to route the exact same unified payload across **multiple platforms simultaneously** — without writing any custom schema transformations, endpoint-specific code, or manual payload mappings.
+**Trading Semantic Templates** provide standardized adapters for exchanges, prediction markets, payment systems, and data feeds. This module allows agents to use a single schema across platforms without custom transformation code.
 
-Think of it as a universal adapter layer: your agent constructs a single `tradeOrder` object once, and Engram automatically translates it into the correct API format for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, or any supported feed source.
+Engram translates the unified payload into the specific API format for the target platform (e.g., Binance, Kalshi, Stripe).
 
 ### Supported Platforms
 
@@ -502,16 +500,54 @@ The unified schema covers four payload types. Your agent constructs one of these
 
 ---
 
-## Quick Start
+## One-Command Quick Start
 
-The standard way to run the middleware with its dependencies (Neon, Redis) is using Docker Compose.
+Engram now features a unified runtime that launches the FastAPI bridge, background orchestration services (Discovery + Task Worker), and a real-time TUI dashboard simultaneously.
 
+### Installation & Run
+
+#### **Windows (Recommended)**
+```powershell
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Launch the unified engine
+.\engram.bat run
+```
+
+#### **Linux / macOS**
 ```bash
-docker compose up --build
+# 1. Run the auto-installer
+chmod +x setup.sh && ./setup.sh
+
+# 2. Launch the unified engine
+engram run
 ```
 
 Once running, the Swagger UI API documentation is available at:  
 `http://localhost:8000/docs`
+
+---
+
+## Terminal Dashboard (TUI)
+
+The Engram TUI provides a terminal interface to monitor protocol bridge operations and background services.
+
+### TUI Command Reference
+Type these commands directly into the prompt at the bottom of the dashboard:
+
+| Command | Action |
+| :--- | :--- |
+| `/status` | Check the health of the bridge, memory silos, and worker loops. |
+| `/agents` | List all connected agents and their compatibility scores. |
+| `/clear` | Clear the translation event logs from the view. |
+| `/help` | Show the available command list. |
+| **`[Natural Language]`** | Any text not starting with `/` is automatically routed to the **Delegation Engine** for intent detection and swarm orchestration. |
+
+### Key Bindings
+- **`Q`**: Quit the daemon and stop background services.
+- **`C`**: Clear the log view.
+- **`R`**: Force refresh system metrics.
 
 ---
 
@@ -617,7 +653,7 @@ Built for high-throughput, low-latency agent handoffs. Based on our [JMeter load
 
 *   **Low Latency:** p50 ≤ 120 ms, p95 ≤ 300 ms, p99 ≤ 600 ms (tested on local Docker stack).
 *   **High Throughput:** Handles ≥ 150 requests/sec sustained for 5 minutes.
-*   **Rock Solid:** ≤ 1% error rate and ≤ 80% CPU utilization under peak load.
+*   **Stable:** Low error rate and optimized CPU utilization under peak load.
 
 ---
 
@@ -636,20 +672,16 @@ Configuration is managed via environment variables. Create a `.env` file in the 
 
 ---
 
-## Local Development Setup
+## Manual Development Setup
 
-To run the application directly on your machine without Docker:
+If you prefer to run components individually for debugging:
 
 ```bash
-# 1. Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# 1. Backend + Orchestration + TUI (Unified)
+python app/main.py
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Start the application
-uvicorn app.main:app --reload
+# 2. Web Playground (Frontend)
+cd playground && npm run dev
 ```
 
 Run test suite:
@@ -675,7 +707,7 @@ We run unit tests on every pull request and push to `main` via GitHub Actions, a
 
 ## Documentation & Links
 
-*   🌐 **Website:** [useengram.com](https://useengram.com)
+*   **Website:** [useengram.com](https://useengram.com)
 *   [Architecture (ARCHITECTURE.md)](ARCHITECTURE.md): System components, data silos resolution, and overall architecture.
 *   [Deployment (DEPLOYMENT.md)](DEPLOYMENT.md): Instructions for deploying to Render and Cloud Run.
 
