@@ -13,3 +13,7 @@ class TranslationError(TranslatorError):
 class HandoffRoutingError(TranslatorError):
     """Raised when no valid multi-hop translation path can be found between protocols."""
     pass
+
+class HandoffAuthorizationError(TranslatorError):
+    """Raised when the provided EAT (Engram Access Token) is invalid or unauthorized."""
+    pass

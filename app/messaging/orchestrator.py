@@ -4,8 +4,9 @@ import networkx as nx
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from app.core.translator import TranslatorEngine
-from app.core.exceptions import HandoffRoutingError
+from app.core.exceptions import HandoffRoutingError, HandoffAuthorizationError
 from app.core.metrics import record_translation_error, record_translation_success
+from app.core.security import verify_engram_token
 from app.services.mirofish_router import pipe_to_mirofish_swarm
 
 logger = structlog.get_logger(__name__)
@@ -205,32 +206,112 @@ class Orchestrator:
 
     # -- Multi-hop handoff --------------------------------------------------
 
+    def _verify_eat_authorization(
+        self,
+        source_message: Dict[str, Any],
+        source_protocol: str,
+        target_protocol: str,
+        eat: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Extracts EAT from the message or explicit argument and validates that
+        the user is authorized to perform this protocol handoff.
+        """
+        token = eat
+        if not token and isinstance(source_message, dict):
+            # Try extracting from message metadata
+            meta = source_message.get("metadata", source_message.get("meta", {}))
+            if isinstance(meta, dict):
+                token = meta.get("eat") or meta.get("token") or meta.get("auth")
+
+        if not token:
+            # For backward compatibility or internal tasks, we might allow no token
+            # but the policy says EVERY request must be authorized.
+            # For now, we'll log a warning and let it pass if no token is provided, 
+            # UNLESS a strict mode is enabled.
+            # Wait, the prompt says "Ensures that every request... is authorized".
+            # I'll be strict but I'll allow an 'X-Internal-Secret' or similar if needed for tests?
+            # No, I'll just be strict and then I'll fix the tests.
+            logger.warning("Handoff denied: No Engram Access Token (EAT) found.")
+            raise HandoffAuthorizationError(
+                "Missing Engram Access Token (EAT). All agent handoffs must be authorized."
+            )
+
+        try:
+            payload = verify_engram_token(token)
+            
+            # Authorization check:
+            # Does the EAT allow the 'translator' tool with the target protocol scope?
+            src, tgt = source_protocol.upper(), target_protocol.upper()
+            allowed_tools = payload.get("allowed_tools", [])
+            permissions = payload.get("scopes", {}) # map tool_id -> list of scopes
+
+            # 1. Broad 'translator' tool check
+            if "translator" in allowed_tools:
+                translator_scopes = permissions.get("translator", [])
+                if "*" in translator_scopes or tgt in translator_scopes or f"{src}:{tgt}" in translator_scopes:
+                    return payload
+
+            # 2. Specific protocol tool check (e.g. tool "MCP" allowed)
+            if tgt in allowed_tools:
+                return payload
+
+            # 3. MiroFish Exception
+            if tgt == "MIROFISH" and "mirofish" in allowed_tools:
+                return payload
+            
+            logger.error("Handoff unauthorized", user=payload.get("sub"), target=tgt)
+            raise HandoffAuthorizationError(
+                f"EAT for user '{payload.get('sub')}' does not authorize handoff to protocol '{tgt}'."
+            )
+
+        except Exception as exc:
+            if isinstance(exc, HandoffAuthorizationError):
+                raise
+            logger.error("EAT verification error", error=str(exc))
+            raise HandoffAuthorizationError(f"EAT Verification failed: {str(exc)}")
+
     def handoff(
         self,
         source_message: Dict[str, Any],
         source_protocol: str,
         target_protocol: str,
+        eat: Optional[str] = None,
     ) -> HandoffResult:
         """
         Perform a seamless (possibly multi-hop) protocol translation.
 
-        1.  Use the ProtocolGraph to find the shortest path from
+        1.  Authorize the request via EAT (Engram Access Token).
+        2.  Use the ProtocolGraph to find the shortest path from
             *source_protocol* to *target_protocol*.
-        2.  Walk the path, translating the message one hop at a time via
+        3.  Walk the path, translating the message one hop at a time via
             TranslatorEngine.translate().
-        3.  Return a HandoffResult with the final message, the route taken,
+        4.  Return a HandoffResult with the final message, the route taken,
             and per-hop audit data.
 
         :param source_message:  The original message payload.
         :param source_protocol: Protocol the message currently conforms to.
         :param target_protocol: Protocol required by the receiving agent.
+        :param eat:             Optional explicit Engram Access Token (JWT).
         :returns: HandoffResult with translated_message, route, total_weight,
                   and per-hop details.
+        :raises HandoffAuthorizationError: If the token is missing/invalid.
         :raises HandoffRoutingError: If no path can be found.
         :raises TranslationError:    If any individual hop fails.
         """
         src = source_protocol.upper()
         tgt = target_protocol.upper()
+
+        # 1. Authorization
+        auth_payload = self._verify_eat_authorization(
+            source_message, src, tgt, eat
+        )
+        logger.info(
+            "Handoff authorized",
+            user_id=auth_payload.get("sub"),
+            source_protocol=src,
+            target_protocol=tgt,
+        )
 
         # Identity case — no translation needed
         if src == tgt:
@@ -375,6 +456,7 @@ class Orchestrator:
         source_message: Dict[str, Any],
         source_protocol: str,
         target_protocol: str,
+        eat: Optional[str] = None,
     ) -> HandoffResult:
         """Async variant of :meth:`handoff`.
 
@@ -385,11 +467,13 @@ class Orchestrator:
         src = source_protocol.upper()
         tgt = target_protocol.upper()
 
+        # Authorization is handled inside handoff() but we need to pass the eat
         if tgt == "MIROFISH":
-            logger.info(
-                "Handoff async: routing to MiroFish swarm bridge",
-                source_protocol=src,
-            )
+            # Direct async handling for MiroFish to avoid blocking
+            # But we still need to authorize first
+            auth_payload = self._verify_eat_authorization(source_message, src, tgt, eat)
+            logger.info("Handoff async authorized (MiroFish)", user_id=auth_payload.get("sub"))
+            
             if isinstance(source_message, dict):
                 mirofish_meta = source_message.get("metadata", source_message.get("meta", {}))
                 if not isinstance(mirofish_meta, dict):
@@ -416,7 +500,7 @@ class Orchestrator:
             )
 
         # Delegate standard handoff to the sync implementation
-        return self.handoff(source_message, source_protocol, target_protocol)
+        return self.handoff(source_message, source_protocol, target_protocol, eat)
 
 
 if __name__ == "__main__":

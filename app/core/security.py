@@ -97,11 +97,36 @@ def _extract_scopes(payload: Dict[str, Any]) -> List[str]:
         return [str(s) for s in scopes_val]
     return []
 
+def verify_engram_token(token: str) -> Dict[str, Any]:
+    """
+    Synchronously verifies an Engram Access Token (EAT).
+    Checks signature, expiration, issuer, audience, and type.
+    """
+    key = _get_verification_key()
+    try:
+        payload = jwt.decode(
+            token,
+            key,
+            algorithms=[settings.AUTH_JWT_ALGORITHM],
+            audience=settings.AUTH_AUDIENCE,
+            issuer=settings.AUTH_ISSUER,
+            options={"require": ["exp", "iss", "aud"]},
+        )
+        if payload.get("type") != "EAT":
+            raise HTTPException(status_code=401, detail="Token is not a valid Engram Access Token (EAT).")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Engram Access Token has expired.")
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid Engram Access Token: {str(exc)}")
+
 
 async def get_current_principal(
     security_scopes: SecurityScopes,
     token: str = Depends(oauth2_scheme),
 ) -> Dict[str, Any]:
+    # We use the generic verification here but we also allow non-EAT tokens (standard access tokens)
+    # for the main API endpoints.
     key = _get_verification_key()
     try:
         payload = jwt.decode(
@@ -113,7 +138,7 @@ async def get_current_principal(
             options={"require": ["exp", "iss", "aud"]},
         )
     except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid authentication token.") from exc
+        raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(exc)}")
 
     token_scopes = _extract_scopes(payload)
     required_scopes = list(security_scopes.scopes)
@@ -126,9 +151,11 @@ async def get_current_principal(
         session_data = SessionService.get_session(session_id)
         if not session_data:
             raise HTTPException(status_code=401, detail="Session expired or revoked.")
-        # Slide session expiration
+    # Slide session expiration
+    if session_id:
         SessionService.extend_session(session_id)
 
+    payload["_raw_token"] = token
     return payload
 
 

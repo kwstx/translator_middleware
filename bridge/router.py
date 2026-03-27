@@ -23,11 +23,13 @@ async def routeTo(
     """
     # This will be wrapped/called by reliability middleware
     source_protocol = options.get("source_protocol", "A2A")
+    eat = options.get("eat")
     
     result = await _orchestrator.handoff_async(
         source_message=payload,
         source_protocol=source_protocol,
-        target_protocol=target
+        target_protocol=target,
+        eat=eat
     )
     
     return result.translated_message

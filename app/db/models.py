@@ -121,6 +121,7 @@ class Task(SQLModel, table=True):
     source_message: Dict[str, Any] = Field(
         sa_column=Column(JSONB, nullable=False)
     )
+    eat: Optional[str] = Field(default=None) # The Engram Access Token used to authorize this task
     status: TaskStatus = Field(
         default=TaskStatus.PENDING,
         sa_column=Column(Enum(TaskStatus), index=True, nullable=False),

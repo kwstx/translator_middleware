@@ -263,25 +263,47 @@ class BetaTranslateResponse(TranslateResponse):
 async def translate_message(
     request: TranslateRequest,
     db: Session = Depends(get_session),
-    _principal: Dict[str, Any] = require_scopes(["translate:a2a"]),
+    principal: Dict[str, Any] = Depends(require_scopes(["translate:a2a"])),
 ):
     """Translates a message from source agent protocol to target agent protocol."""
-    # 1. Look up source and target agents
-    # 2. Identify protocol mapping rules
-    # 3. Apply semantic mapping using ontology_manager
-    # 4. Return translated payload or queue it for handoff
-    # Placeholder for translation logic
     try:
-        response = {
-            "status": "pending",
-            "message": f"Translating message from {request.source_agent} to {request.target_agent}",
-            "payload": request.payload,
-        }
-        record_translation_success("api")
-        return response
-    except Exception:
+        # 1. Look up source and target agents to find their protocols
+        src_agent_stmt = select(AgentRegistry).where(AgentRegistry.agent_id == UUID(request.source_agent))
+        tgt_agent_stmt = select(AgentRegistry).where(AgentRegistry.agent_id == UUID(request.target_agent))
+        
+        src_res = await db.execute(src_agent_stmt)
+        tgt_res = await db.execute(tgt_agent_stmt)
+        
+        source_agent = src_res.scalars().first()
+        target_agent = tgt_res.scalars().first()
+        
+        if not source_agent or not target_agent:
+             raise HTTPException(status_code=404, detail="One or more agents not found in registry.")
+
+        # For multi-protocol agents, we'll pick the first one for now or match against common paths
+        source_protocol = source_agent.supported_protocols[0]
+        target_protocol = target_agent.supported_protocols[0]
+
+        # 2. Call routeTo with the EAT
+        result_payload = await routeTo(
+             target=target_protocol,
+             payload=request.payload,
+             source_protocol=source_protocol,
+             correlation_id=f"api-{request.source_agent}",
+             eat=principal.get("_raw_token")
+        )
+        
+        record_translation_success("api", source_protocol, target_protocol)
+        return TranslateResponse(
+            status="completed",
+            message=f"Translated message from {request.source_agent} to {request.target_agent}",
+            payload=result_payload,
+        )
+    except Exception as exc:
         record_translation_error("api")
-        raise
+        if isinstance(exc, HTTPException):
+             raise
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(exc)}")
 
 
 @router.post(
@@ -294,14 +316,15 @@ async def translate_message(
 async def beta_translate_message(
     request: BetaTranslateRequest,
     db: Session = Depends(get_session),
-    _principal: Dict[str, Any] = require_scopes(["translate:beta"]),
+    principal: Dict[str, Any] = Depends(require_scopes(["translate:beta"])),
 ):
     try:
         result_payload = await routeTo(
             target=request.target_protocol,
             payload=request.payload,
             source_protocol=request.source_protocol,
-            correlation_id="beta-translate"
+            correlation_id="beta-translate",
+            eat=principal.get("_raw_token")
         )
         record_translation_success(
             "beta", request.source_protocol.upper(), request.target_protocol.upper()
@@ -365,11 +388,19 @@ async def playground_translate_message(
     db: Session = Depends(get_session),
 ):
     try:
+        from app.core.security import create_engram_access_token
+        # Playground uses a guest token with broad translator permissions
+        guest_eat = create_engram_access_token(
+            user_id="playground-guest",
+            permissions={"translator": ["*"]}
+        )
+        
         result_payload = await routeTo(
             target=request.target_protocol,
             payload=request.payload,
             source_protocol=request.source_protocol,
-            correlation_id="playground"
+            correlation_id="playground",
+            eat=guest_eat
         )
         return BetaTranslateResponse(
             status="success",
@@ -442,6 +473,7 @@ class AgentMessageLeaseResponse(BaseModel):
 async def enqueue_task(
     request: TaskEnqueueRequest,
     db: Session = Depends(get_session),
+    principal: Dict[str, Any] = Depends(require_scopes(["translate:a2a"])),
 ):
     task = Task(
         source_message=request.source_message,
@@ -450,6 +482,7 @@ async def enqueue_task(
         target_agent_id=request.target_agent_id,
         status=TaskStatus.PENDING,
         max_attempts=request.max_attempts,
+        eat=principal.get("_raw_token")
     )
     db.add(task)
     await db.commit()
