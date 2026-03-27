@@ -69,18 +69,50 @@ class BaseConnector(abc.ABC):
         Maps tool-specific error codes and exceptions to Engram's unified error format.
         """
         error_type = type(error).__name__
-        detail = str(error)
+        detail = str(error).lower()
         
         # Mapping common tool errors (extendable per connector)
+        # Attempt to extract status code from common library exception patterns
         status_code = getattr(error, "status_code", 500)
+        if hasattr(error, "response") and hasattr(error.response, "status_code"):
+            status_code = error.response.status_code
         
+        # Check for specific library-level timeouts
+        is_timeout = "timeout" in detail or "timed out" in detail
+        
+        engram_code = "TOOL_EXECUTION_FAILURE"
+        is_transient = False
+        action_required = None
+
+        if status_code == 429 or "rate limit" in detail or "too many requests" in detail:
+            engram_code = "TRANSIENT_TOOL_ERROR"
+            error_type = "RateLimitError"
+            is_transient = True
+        elif status_code in (502, 503, 504) or is_timeout or "connection" in detail:
+            engram_code = "TRANSIENT_TOOL_ERROR"
+            error_type = "NetworkError"
+            is_transient = True
+        elif status_code == 401 or "unauthorized" in detail or "invalid api key" in detail:
+            engram_code = "AUTH_FAILURE"
+            error_type = "InvalidCredentialsError"
+        elif "expired" in detail or ("token" in detail and "refresh" in detail):
+            engram_code = "AUTH_FAILURE"
+            error_type = "ExpiredTokenError"
+            action_required = "REFRESH_CREDENTIALS"
+        elif status_code >= 400 and status_code < 500:
+            engram_code = "BAD_TOOL_REQUEST"
+
         return {
             "status": "error",
             "connector": self.name,
             "error_type": error_type,
-            "detail": detail,
-            "engram_code": "TOOL_EXECUTION_FAILURE" if status_code >= 500 else "BAD_TOOL_REQUEST"
+            "detail": str(error),
+            "engram_code": engram_code,
+            "is_transient": is_transient,
+            "action_required": action_required
         }
+
+
 
     async def execute(self, message: Dict[str, Any], message_protocol: str, db: Optional[Any] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         """

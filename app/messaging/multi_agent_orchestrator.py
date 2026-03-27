@@ -4,7 +4,16 @@ import re
 import structlog
 from typing import List, Dict, Any, Optional, Tuple
 from app.messaging.orchestrator import Orchestrator, HandoffResult
-from app.core.exceptions import HandoffAuthorizationError, TranslationError
+from app.core.exceptions import (
+    HandoffAuthorizationError, 
+    TranslationError,
+    TransientError,
+    PermanentError,
+    RateLimitError,
+    NetworkError,
+    ExpiredTokenError,
+    InvalidCredentialsError
+)
 from app.core.security import verify_engram_token
 from app.messaging.connectors.registry import get_default_registry
 from bridge.memory import memory_backend
@@ -111,7 +120,18 @@ class MultiAgentOrchestrator:
                     
                     # Check if result is an error status (normalized connector response)
                     if isinstance(step_result, dict) and step_result.get("status") == "error":
-                        raise TranslationError(step_result.get("detail", "Unknown agent error"))
+                        err_type = step_result.get("error_type", "")
+                        is_transient = step_result.get("is_transient", False)
+                        
+                        if "ExpiredToken" in err_type:
+                            raise ExpiredTokenError(step_result.get("detail", "Token expired"))
+                        if "InvalidCredentials" in err_type:
+                            raise InvalidCredentialsError(step_result.get("detail", "Invalid credentials"))
+                        
+                        if is_transient or "RateLimit" in err_type or "Network" in err_type:
+                            raise NetworkError(step_result.get("detail", "Transient tool error"))
+                            
+                        raise TranslationError(step_result.get("detail", "Permanent agent execution error"))
 
                     results[agent_name] = step_result
                     context[f"step_{i}_result"] = step_result
@@ -132,11 +152,35 @@ class MultiAgentOrchestrator:
                     last_err = None
                     break # Success!
 
-                except Exception as e:
+                except ExpiredTokenError as e:
+                    tui_event_queue.put_nowait(f"🔑 [bold red]Auth Error:[/] Token for {agent_name} expired. Please refresh credentials.")
+                    logger.warning("MultiAgent: token expired", agent=agent_name, error=str(e))
+                    return {"status": "error", "error": "token_expired", "action_required": "REFRESH_CREDENTIALS", "detail": str(e)}
+                
+                except InvalidCredentialsError as e:
+                    tui_event_queue.put_nowait(f"🚫 [bold red]Auth Error:[/] Invalid credentials for {agent_name}.")
+                    logger.warning("MultiAgent: invalid credentials", agent=agent_name, error=str(e))
+                    return {"status": "error", "error": "invalid_credentials", "detail": str(e)}
+
+                except (TransientError, NetworkError, RateLimitError) as e:
                     last_err = e
-                    logger.warning("Step attempt failed", agent=agent_name, attempt=attempt+1, error=str(e))
+                    logger.warning("Step transient failure", agent=agent_name, attempt=attempt+1, error=str(e))
                     if attempt < max_retries - 1:
-                         await asyncio.sleep(1.5 * (attempt + 1)) # Backoff
+                        await asyncio.sleep(2 * (attempt + 1)) # Backoff
+                    else:
+                        tui_event_queue.put_nowait(f"⏳ [red]Step {i+1} failed after retries:[/] {agent_name} is currently unavailable.")
+                        # After 3 attempts, we can't do more
+                
+                except Exception as e:
+                    logger.error("Step permanent failure", agent=agent_name, error=str(e), exc_info=True)
+                    tui_event_queue.put_nowait(f"❌ [red]Orchestration aborted at {agent_name}:[/] Permanent error: {str(e)}")
+                    return {
+                        "status": "error",
+                        "failed_step": i + 1,
+                        "failed_agent": agent_name,
+                        "error": str(e),
+                        "partial_results": results
+                    }
             
             if last_err:
                 tui_event_queue.put_nowait(f"❌ [red]Orchestration aborted at {agent_name}:[/] Failed after {max_retries} attempts.")

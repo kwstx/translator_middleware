@@ -31,3 +31,4 @@ passlib[bcrypt]>=1.7.4
 bcrypt>=4.1.0
 requests>=2.31.0
 cryptography>=42.0.0
+tenacity>=8.3.0
