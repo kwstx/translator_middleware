@@ -64,17 +64,8 @@ class ClaudeConnector(BaseConnector):
         Performs the actual API call to Anthropic Claude.
         If 'db' and 'user_id' are provided, it uses the user's specific API key.
         """
-        api_key = self.api_key
-
-        # Override with user credential if available
-        if db and user_id:
-            try:
-                cred = await CredentialService.get_credential_by_provider(db, UUID(user_id), "claude")
-                if cred:
-                    api_key = CredentialService.decrypt_token(cred)
-                    logger.info("ClaudeConnector: using user-provided API key", user_id=user_id)
-            except Exception as e:
-                logger.warning("ClaudeConnector: failed to retrieve user credentials", error=str(e))
+        # Retrieve active token (with auto-refresh)
+        api_key = await self.get_active_token(db, user_id, self.api_key)
 
         if not api_key:
             logger.warning("ClaudeConnector: missing API key, returning mock response")

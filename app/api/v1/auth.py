@@ -11,7 +11,8 @@ from app.core.security import (
     verify_password, 
     create_access_token, 
     create_engram_access_token,
-    get_current_principal
+    get_current_principal,
+    revoke_token
 )
 from datetime import timedelta
 from app.services.session import SessionService
@@ -116,6 +117,16 @@ async def logout(principal: Dict[str, Any] = Depends(get_current_principal)):
     session_id = principal.get("sid")
     if session_id:
         SessionService.revoke_session(session_id)
+        
+    jti = principal.get("jti")
+    exp = principal.get("exp")
+    if jti and exp:
+        # Revoke the token until it would have expired
+        now = int(timedelta(seconds=0).total_seconds()) # placeholder for current time
+        import time
+        expires_in = max(1, exp - int(time.time()))
+        revoke_token(jti, expires_in)
+        
     return {"detail": "Successfully logged out"}
 
 @router.get("/sessions")
@@ -158,3 +169,41 @@ async def generate_eat(
     )
     
     return {"eat": eat, "token_type": "bearer"}
+@router.post("/tokens/revoke-eat")
+async def revoke_eat(
+    token_to_revoke: str,
+    principal: Dict[str, Any] = Depends(get_current_principal)
+):
+    """
+    Revokes a specific Engram Access Token.
+    Users can only revoke their own tokens.
+    """
+    import jwt
+    from app.core.config import settings
+    from app.core.security import _get_verification_key
+    
+    try:
+        # We decode without verification of expiration to allow revoking already expired tokens if needed,
+        # but we verify signature.
+        payload = jwt.decode(
+            token_to_revoke,
+            _get_verification_key(),
+            algorithms=[settings.AUTH_JWT_ALGORITHM],
+            options={"verify_exp": False, "require": ["jti", "sub"]}
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=400, detail="Invalid token format")
+
+    # Access control
+    if payload.get("sub") != principal.get("sub"):
+        raise HTTPException(status_code=403, detail="You can only revoke your own tokens.")
+
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    
+    if jti and exp:
+        import time
+        expires_in = max(1, exp - int(time.time()))
+        revoke_token(jti, expires_in)
+        
+    return {"detail": "Token successfully revoked"}

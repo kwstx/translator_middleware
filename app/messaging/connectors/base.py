@@ -44,6 +44,25 @@ class BaseConnector(abc.ABC):
         """
         pass
 
+    async def get_active_token(self, db: Optional[Any], user_id: Optional[str], default_token: Optional[str] = None) -> Optional[str]:
+        """
+        Helper to retrieve the user's specific credential with automatic refresh support.
+        Falls back to the provided default token if no user-specific credential is found.
+        """
+        from uuid import UUID
+        from app.services.credentials import CredentialService
+        
+        if db and user_id:
+            try:
+                token = await CredentialService.get_active_token(db, UUID(user_id), self.name.lower())
+                if token:
+                    logger.info("Connector: using active user token", connector=self.name, user_id=user_id)
+                    return token
+            except Exception as e:
+                logger.warning("Connector: failed to retrieve user credentials", connector=self.name, error=str(e))
+        
+        return default_token
+
     def reconcile_schema(self, data: Dict[str, Any], target_protocol: str) -> Dict[str, Any]:
         """
         Reconciles data schema using the SemanticMapper's DataSiloResolver.

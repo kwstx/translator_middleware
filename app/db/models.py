@@ -269,6 +269,11 @@ class ProviderCredential(SQLModel, table=True):
         sa_column=Column(Enum(CredentialType), index=True, nullable=False)
     )
     encrypted_token: str = Field(nullable=False)
+    encrypted_refresh_token: Optional[str] = Field(default=None)
+    expires_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
     
     # Extra data like refresh tokens, expiry for OAuth
     credential_metadata: Dict[str, Any] = Field(

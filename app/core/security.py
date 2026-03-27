@@ -11,9 +11,12 @@ from app.db.session import get_session
 from app.db.models import PermissionProfile
 from app.services.session import SessionService
 from sqlmodel import Session, select
-from uuid import UUID
+import uuid
+from app.core.redis_client import get_redis_client
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+REVOKED_TOKEN_PREFIX = "revoked_token:"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -30,6 +33,11 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # Ensure JTI exists for revocation tracking
+    if "jti" not in to_encode:
+        to_encode["jti"] = str(uuid.uuid4())
+        
     to_encode.update({
         "exp": int(expire.timestamp()),
         "iss": settings.AUTH_ISSUER,
@@ -97,10 +105,26 @@ def _extract_scopes(payload: Dict[str, Any]) -> List[str]:
         return [str(s) for s in scopes_val]
     return []
 
+def is_token_revoked(jti: str) -> bool:
+    """Checks if a token has been explicitly revoked."""
+    redis = get_redis_client()
+    if not redis or not jti:
+        return False
+    return redis.exists(f"{REVOKED_TOKEN_PREFIX}{jti}") > 0
+
+
+def revoke_token(jti: str, expires_in: int):
+    """Adds a token to the revocation list until it would have expired."""
+    redis = get_redis_client()
+    if not redis or not jti:
+        return
+    redis.setex(f"{REVOKED_TOKEN_PREFIX}{jti}", expires_in, "1")
+
+
 def verify_engram_token(token: str) -> Dict[str, Any]:
     """
     Synchronously verifies an Engram Access Token (EAT).
-    Checks signature, expiration, issuer, audience, and type.
+    Checks signature, expiration, issuer, audience, type, and revocation status.
     """
     key = _get_verification_key()
     try:
@@ -110,10 +134,14 @@ def verify_engram_token(token: str) -> Dict[str, Any]:
             algorithms=[settings.AUTH_JWT_ALGORITHM],
             audience=settings.AUTH_AUDIENCE,
             issuer=settings.AUTH_ISSUER,
-            options={"require": ["exp", "iss", "aud"]},
+            options={"require": ["exp", "iss", "aud", "jti"]},
         )
         if payload.get("type") != "EAT":
             raise HTTPException(status_code=401, detail="Token is not a valid Engram Access Token (EAT).")
+        
+        if is_token_revoked(payload.get("jti")):
+            raise HTTPException(status_code=401, detail="Token has been revoked.")
+            
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Engram Access Token has expired.")
@@ -137,6 +165,13 @@ async def get_current_principal(
             issuer=settings.AUTH_ISSUER,
             options={"require": ["exp", "iss", "aud"]},
         )
+        
+        # We don't always require JTI for standard tokens if they were issued before this change,
+        # but if it exists, we check revocation.
+        jti = payload.get("jti")
+        if jti and is_token_revoked(jti):
+             raise HTTPException(status_code=401, detail="Token has been revoked.")
+             
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(exc)}")
 

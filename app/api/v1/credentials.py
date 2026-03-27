@@ -10,9 +10,13 @@ from uuid import UUID
 
 router = APIRouter()
 
+from datetime import datetime
+
 class CredentialSaveRequest(BaseModel):
     provider_name: str
     token: str
+    refresh_token: Optional[str] = None
+    expires_at: Optional[datetime] = None
     credential_type: CredentialType = CredentialType.API_KEY
     metadata: Dict[str, Any] = {}
 
@@ -20,6 +24,7 @@ class CredentialResponse(BaseModel):
     id: UUID
     provider_name: str
     credential_type: CredentialType
+    expires_at: Optional[datetime] = None
     # We do NOT return the token for security reasons
 
 @router.post("/", response_model=CredentialResponse)
@@ -39,7 +44,9 @@ async def save_credential(
         request.provider_name.lower(), 
         request.token, 
         request.credential_type,
-        request.metadata
+        refresh_token=request.refresh_token,
+        expires_at=request.expires_at,
+        metadata=request.metadata
     )
     return cred
 
