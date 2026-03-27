@@ -37,9 +37,10 @@ class BaseConnector(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def call_tool(self, tool_request: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_tool(self, tool_request: Dict[str, Any], db: Optional[Any] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Performs the actual API call to the tool.
+        If 'db' and 'user_id' are provided, the connector can retrieve the user's specific credentials.
         """
         pass
 
@@ -81,7 +82,7 @@ class BaseConnector(abc.ABC):
             "engram_code": "TOOL_EXECUTION_FAILURE" if status_code >= 500 else "BAD_TOOL_REQUEST"
         }
 
-    async def execute(self, message: Dict[str, Any], message_protocol: str) -> Dict[str, Any]:
+    async def execute(self, message: Dict[str, Any], message_protocol: str, db: Optional[Any] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         The main entry point for executing a task via the connector.
         Supports single tasks and multi-step sequential workflows.
@@ -100,7 +101,7 @@ class BaseConnector(abc.ABC):
             # 2. Check for multi-step workflow in the task
             workflow_steps = normalized_task.get("workflow", [])
             if workflow_steps and isinstance(workflow_steps, list):
-                return await self._execute_workflow(workflow_steps, normalized_task)
+                return await self._execute_workflow(workflow_steps, normalized_task, db, user_id)
 
             # 3. Standard single-step execution
             # Reconcile schema before translating to tool
@@ -109,7 +110,7 @@ class BaseConnector(abc.ABC):
             tool_request = self.translate_to_tool(reconciled_task)
             logger.debug("Connector: translated to tool format", connector=self.name, request=tool_request)
 
-            tool_response = await self.call_tool(tool_request)
+            tool_response = await self.call_tool(tool_request, db, user_id)
             logger.debug("Connector: received tool response", connector=self.name)
 
             final_response = self.translate_from_tool(tool_response)
@@ -122,7 +123,7 @@ class BaseConnector(abc.ABC):
             record_translation_error(f"connector_{self.name.lower()}", message_protocol, self.name.upper())
             return self.handle_error(e)
 
-    async def _execute_workflow(self, steps: List[Dict[str, Any]], context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_workflow(self, steps: List[Dict[str, Any]], context: Dict[str, Any], db: Optional[Any] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Executes a sequence of steps, passing the output of one as context to the next.
         """
@@ -142,7 +143,7 @@ class BaseConnector(abc.ABC):
             
             # Call tool
             try:
-                step_resp = await self.call_tool(tool_req)
+                step_resp = await self.call_tool(tool_req, db, user_id)
                 step_final = self.translate_from_tool(step_resp)
                 
                 # Update context with output for next step

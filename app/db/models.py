@@ -251,3 +251,36 @@ class PermissionProfile(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
     )
+
+class CredentialType(str, enum.Enum):
+    API_KEY = "API_KEY"
+    OAUTH_TOKEN = "OAUTH_TOKEN"
+    DELEGATED_TOKEN = "DELEGATED_TOKEN"
+
+class ProviderCredential(SQLModel, table=True):
+    __tablename__ = "provider_credentials"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False)
+    )
+    provider_name: str = Field(index=True, nullable=False) # e.g., "claude", "slack"
+    credential_type: CredentialType = Field(
+        sa_column=Column(Enum(CredentialType), index=True, nullable=False)
+    )
+    encrypted_token: str = Field(nullable=False)
+    
+    # Extra data like refresh tokens, expiry for OAuth
+    credential_metadata: Dict[str, Any] = Field(
+        default={},
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
+    )
+    
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
+    )

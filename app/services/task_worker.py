@@ -83,7 +83,8 @@ class TaskWorker:
                 source_protocol=task.source_protocol,
                 correlation_id=str(task.id),
                 retry_count=task.attempts,
-                eat=task.eat
+                eat=task.eat,
+                db=session
             )
             message = AgentMessage(
                 task_id=task.id,

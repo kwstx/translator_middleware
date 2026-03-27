@@ -24,12 +24,14 @@ async def routeTo(
     # This will be wrapped/called by reliability middleware
     source_protocol = options.get("source_protocol", "A2A")
     eat = options.get("eat")
+    db = options.get("db") # Get the session from options
     
     result = await _orchestrator.handoff_async(
         source_message=payload,
         source_protocol=source_protocol,
         target_protocol=target,
-        eat=eat
+        eat=eat,
+        db=db
     )
     
     return result.translated_message

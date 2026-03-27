@@ -1,7 +1,9 @@
 import httpx
 import structlog
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+from uuid import UUID
 from .base import BaseConnector
+from app.services.credentials import CredentialService
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -56,16 +58,29 @@ class PerplexityConnector(BaseConnector):
                 }
             }
 
-    async def call_tool(self, tool_request: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_tool(self, tool_request: Dict[str, Any], db: Optional[Any] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Performs the actual API call to Perplexity.
+        If 'db' and 'user_id' are provided, it uses the user's specific API key.
         """
-        if not self.api_key:
+        api_key = self.api_key
+
+        # Override with user credential if available
+        if db and user_id:
+            try:
+                cred = await CredentialService.get_credential_by_provider(db, UUID(user_id), "perplexity")
+                if cred:
+                    api_key = CredentialService.decrypt_token(cred)
+                    logger.info("PerplexityConnector: using user-provided API key", user_id=user_id)
+            except Exception as e:
+                logger.warning("PerplexityConnector: failed to retrieve user credentials", error=str(e))
+
+        if not api_key:
             logger.warning("PerplexityConnector: missing API key, returning mock response")
             return self._mock_call(tool_request)
 
         headers = {
-            "authorization": f"Bearer {self.api_key}",
+            "authorization": f"Bearer {api_key}",
             "content-type": "application/json"
         }
         

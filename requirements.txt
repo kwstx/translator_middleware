@@ -30,3 +30,4 @@ ccxt>=4.2.10
 passlib[bcrypt]>=1.7.4
 bcrypt>=4.1.0
 requests>=2.31.0
+cryptography>=42.0.0

@@ -290,7 +290,8 @@ async def translate_message(
              payload=request.payload,
              source_protocol=source_protocol,
              correlation_id=f"api-{request.source_agent}",
-             eat=principal.get("_raw_token")
+             eat=principal.get("_raw_token"),
+             db=db
         )
         
         record_translation_success("api", source_protocol, target_protocol)
@@ -324,7 +325,8 @@ async def beta_translate_message(
             payload=request.payload,
             source_protocol=request.source_protocol,
             correlation_id="beta-translate",
-            eat=principal.get("_raw_token")
+            eat=principal.get("_raw_token"),
+            db=db
         )
         record_translation_success(
             "beta", request.source_protocol.upper(), request.target_protocol.upper()
@@ -400,7 +402,8 @@ async def playground_translate_message(
             payload=request.payload,
             source_protocol=request.source_protocol,
             correlation_id="playground",
-            eat=guest_eat
+            eat=guest_eat,
+            db=db
         )
         return BetaTranslateResponse(
             status="success",

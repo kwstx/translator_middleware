@@ -352,10 +352,11 @@ class Orchestrator:
                     # If we are in a loop, we have to use a thread or similar
                     import concurrent.futures
                     with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = loop.run_in_executor(pool, lambda: _aio.run(connector.execute(source_message, src)))
+                        # Passing None for db here as sync session is tricky, but preferably we use handoff_async
+                        future = loop.run_in_executor(pool, lambda: _aio.run(connector.execute(source_message, src, user_id=auth_payload.get("sub"))))
                         result = _aio.get_event_loop().run_until_complete(future)
                 except RuntimeError:
-                    result = _aio.run(connector.execute(source_message, src))
+                    result = _aio.run(connector.execute(source_message, src, user_id=auth_payload.get("sub")))
                 
                 return HandoffResult(
                     translated_message=result,
@@ -422,6 +423,7 @@ class Orchestrator:
         source_protocol: str,
         target_protocol: str,
         eat: Optional[str] = None,
+        db: Optional[Any] = None,
     ) -> HandoffResult:
         """Async variant of :meth:`handoff`.
 
@@ -440,7 +442,9 @@ class Orchestrator:
             logger.info("Handoff async authorized for tool", tool=tgt, user_id=auth_payload.get("sub"))
             
             connector = self.connector_registry.get_connector(tgt)
-            result = await connector.execute(source_message, src)
+            # Inject user_id into message metadata for the connector to find if db is not passed? 
+            # Better to pass db directly to execute.
+            result = await connector.execute(source_message, src, db=db, user_id=auth_payload.get("sub"))
             
             return HandoffResult(
                 translated_message=result,

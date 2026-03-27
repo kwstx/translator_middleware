@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     AUTH_JWT_SECRET: Optional[str] = None
     AUTH_JWT_PUBLIC_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    PROVIDER_CREDENTIALS_ENCRYPTION_KEY: Optional[str] = None
 
     # Tool Access Connectors
     ANTHROPIC_API_KEY: Optional[str] = None
