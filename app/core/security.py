@@ -9,6 +9,7 @@ from passlib.context import CryptContext
 from app.core.config import settings
 from app.db.session import get_session
 from app.db.models import PermissionProfile
+from app.services.session import SessionService
 from sqlmodel import Session, select
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -87,6 +88,15 @@ async def get_current_principal(
     required_scopes = list(security_scopes.scopes)
     if required_scopes and not set(required_scopes).issubset(set(token_scopes)):
         raise HTTPException(status_code=403, detail="Insufficient scope for this resource.")
+
+    # Validate session for stateful check if session ID is present
+    session_id = payload.get("sid")
+    if session_id:
+        session_data = SessionService.get_session(session_id)
+        if not session_data:
+            raise HTTPException(status_code=401, detail="Session expired or revoked.")
+        # Slide session expiration
+        SessionService.extend_session(session_id)
 
     return payload
 
