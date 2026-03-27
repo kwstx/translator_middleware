@@ -23,7 +23,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import endpoints, discovery, auth, permissions, credentials
+from app.api.v1 import endpoints, discovery, auth, permissions, credentials, orchestration
 from bridge.memory import router as memory_router
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -106,6 +106,7 @@ app.include_router(endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(discovery.router, prefix=settings.API_V1_STR)
 app.include_router(permissions.router, prefix=settings.API_V1_STR + "/permissions", tags=["Permissions"])
 app.include_router(credentials.router, prefix=settings.API_V1_STR + "/credentials", tags=["Credentials"])
+app.include_router(orchestration.router, prefix=settings.API_V1_STR, tags=["Orchestration"])
 app.include_router(memory_router, prefix=settings.API_V1_STR)
 
 if __name__ == "__main__":

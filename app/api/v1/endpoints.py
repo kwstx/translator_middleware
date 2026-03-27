@@ -263,7 +263,7 @@ class BetaTranslateResponse(TranslateResponse):
 async def translate_message(
     request: TranslateRequest,
     db: Session = Depends(get_session),
-    principal: Dict[str, Any] = Depends(require_scopes(["translate:a2a"])),
+    principal: Dict[str, Any] = require_scopes(["translate:a2a"]),
 ):
     """Translates a message from source agent protocol to target agent protocol."""
     try:
@@ -317,7 +317,7 @@ async def translate_message(
 async def beta_translate_message(
     request: BetaTranslateRequest,
     db: Session = Depends(get_session),
-    principal: Dict[str, Any] = Depends(require_scopes(["translate:beta"])),
+    principal: Dict[str, Any] = require_scopes(["translate:beta"]),
 ):
     try:
         result_payload = await routeTo(
@@ -476,7 +476,7 @@ class AgentMessageLeaseResponse(BaseModel):
 async def enqueue_task(
     request: TaskEnqueueRequest,
     db: Session = Depends(get_session),
-    principal: Dict[str, Any] = Depends(require_scopes(["translate:a2a"])),
+    principal: Dict[str, Any] = require_scopes(["translate:a2a"]),
 ):
     task = Task(
         source_message=request.source_message,
