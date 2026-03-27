@@ -11,6 +11,7 @@ from app.db.session import get_session
 from app.db.models import PermissionProfile
 from app.services.session import SessionService
 from sqlmodel import Session, select
+from uuid import UUID
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -35,7 +36,33 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         "aud": settings.AUTH_AUDIENCE,
         "iat": int(datetime.now(timezone.utc).timestamp())
     })
-    return jwt.encode(to_encode, _get_verification_key(), algorithm=settings.AUTH_JWT_ALGORITHM)
+    return jwt.encode(to_encode, _get_signing_key(), algorithm=settings.AUTH_JWT_ALGORITHM)
+
+
+def create_engram_access_token(
+    user_id: str,
+    permissions: Dict[str, List[str]],
+    expires_delta: Optional[timedelta] = None
+) -> str:
+    """
+    Generates an Engram Access Token (EAT).
+    EATs are used by agents to authenticate on behalf of users.
+    """
+    allowed_tools = list(permissions.keys())
+    # The 'scope' claim is usually a space-separated string of permissions
+    # We include both the flattened scopes and the structured permissions map
+    all_scopes = set()
+    for s in permissions.values():
+        all_scopes.update(s)
+
+    data = {
+        "sub": user_id,
+        "type": "EAT",
+        "allowed_tools": allowed_tools,
+        "scopes": permissions,
+        "scope": " ".join(sorted(list(all_scopes)))
+    }
+    return create_access_token(data, expires_delta)
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -47,13 +74,17 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
+def _get_signing_key() -> str:
+    if not settings.AUTH_JWT_SECRET:
+        raise RuntimeError("AUTH_JWT_SECRET is required for signing tokens.")
+    return settings.AUTH_JWT_SECRET
+
+
 def _get_verification_key() -> str:
     if settings.AUTH_JWT_ALGORITHM.startswith("HS"):
-        if not settings.AUTH_JWT_SECRET:
-            raise RuntimeError("AUTH_JWT_SECRET is required for HS* algorithms.")
-        return settings.AUTH_JWT_SECRET
+        return _get_signing_key()
     if not settings.AUTH_JWT_PUBLIC_KEY:
-        raise RuntimeError("AUTH_JWT_PUBLIC_KEY is required for RS*/ES* algorithms.")
+        raise RuntimeError("AUTH_JWT_PUBLIC_KEY is required for verification with RS*/ES* algorithms.")
     return settings.AUTH_JWT_PUBLIC_KEY
 
 
@@ -111,8 +142,17 @@ async def check_permissions(
     db: Session = Depends(get_session),
     principal: Dict[str, Any] = Depends(get_current_principal),
 ):
+    # For EAT tokens, we prioritize the embedded scopes for performance and single-key semantics
+    if principal.get("type") == "EAT":
+        eat_permissions = principal.get("scopes", {})
+        if scope in eat_permissions.get(tool_id, []):
+            return True
+
     user_id = principal.get("sub")
-    statement = select(PermissionProfile).where(PermissionProfile.user_id == user_id)
+    if not user_id:
+         raise HTTPException(status_code=401, detail="Subject missing in token.")
+
+    statement = select(PermissionProfile).where(PermissionProfile.user_id == UUID(user_id))
     result = await db.execute(statement)
     profile = result.scalars().first()
 

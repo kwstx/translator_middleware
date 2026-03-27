@@ -6,7 +6,14 @@ from uuid import UUID
 
 from app.db.session import get_session
 from app.db.models import User, PermissionProfile
-from app.core.security import get_password_hash, verify_password, create_access_token, get_current_principal
+from app.core.security import (
+    get_password_hash, 
+    verify_password, 
+    create_access_token, 
+    create_engram_access_token,
+    get_current_principal
+)
+from datetime import timedelta
 from app.services.session import SessionService
 from pydantic import BaseModel, EmailStr
 from fastapi import Request
@@ -124,3 +131,30 @@ async def list_sessions(principal: Dict[str, Any] = Depends(get_current_principa
             sessions.append(data)
             
     return sessions
+
+
+@router.post("/tokens/generate-eat", response_model=Dict[str, str])
+async def generate_eat(
+    db: Session = Depends(get_session),
+    principal: Dict[str, Any] = Depends(get_current_principal),
+    expires_days: Optional[int] = 30
+):
+    """
+    Generates a long-lived Engram Access Token (EAT) for external agent access.
+    The token encodes permissions from the user's current profile.
+    """
+    user_id = principal.get("sub")
+    statement = select(PermissionProfile).where(PermissionProfile.user_id == UUID(user_id))
+    result = await db.execute(statement)
+    profile = result.scalars().first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Permission profile not found")
+        
+    eat = create_engram_access_token(
+        user_id=user_id,
+        permissions=profile.permissions,
+        expires_delta=timedelta(days=expires_days)
+    )
+    
+    return {"eat": eat, "token_type": "bearer"}
