@@ -1,4 +1,5 @@
 from owlready2 import get_ontology, World, Thing
+from typing import Any, Dict, Optional, List
 import os
 import structlog
 import jsonschema
@@ -102,7 +103,15 @@ class SemanticMapper:
         self._cache_set(cache_key, result)
         return result
 
-    def DataSiloResolver(self, source_data: dict, source_schema: dict, target_schema: dict, source_protocol: str, target_protocol: str) -> dict:
+    def DataSiloResolver(
+        self, 
+        source_data: dict, 
+        source_schema: dict, 
+        target_schema: dict, 
+        source_protocol: str, 
+        target_protocol: str,
+        custom_rules: Optional[Dict[str, str]] = None
+    ) -> dict:
         """
         Resolves data silos by detecting schema differences, flattening nested objects,
         and renaming fields based on ontology mappings and PyDatalog rules.
@@ -122,13 +131,13 @@ class SemanticMapper:
         logger.debug(f"Flattened data: {flattened_data}")
 
         # 3. Dynamic Mapping via PyDatalog Rules
-        # Initialize logic for field mapping (clear previous rules)
         pyDatalog.clear()
         
-        # Example rule: if source has user_info.name, map it to profile.fullname
-        # This can be dynamically extended based on the ontology
-        + map_field('user_info.name', 'profile.fullname')
-        + map_field('payload.timestamp', 'data_bundle.iso_date')
+        # Load custom rules if provided
+        if custom_rules:
+            for src_field, tgt_field in custom_rules.items():
+                + map_field(src_field, tgt_field)
+            logger.info("Custom mapping rules loaded", rule_count=len(custom_rules))
 
         # 4. Resolve field names using Ontology Mappings
         mapped_data = {}
@@ -140,11 +149,10 @@ class SemanticMapper:
                 logger.info(f"PyDatalog mapping: {flat_key} -> {target_key}")
             else:
                 # Fallback to SemanticMapper.resolve_equivalent if it's a single concept
-                # This logic assumes the leaf key part is a concept
                 leaf_key = flat_key.split('.')[-1]
                 semantic_res = self.resolve_equivalent(leaf_key, source_protocol)
                 
-                if target_protocol in semantic_res:
+                if target_protocol.upper() in semantic_res.upper():
                     target_key = semantic_res.split(':')[-1]
                     logger.info(f"Ontology mapping: {flat_key} -> {target_key}")
                 else:
@@ -153,7 +161,6 @@ class SemanticMapper:
             mapped_data[target_key] = value
 
         # 5. Reconstruct structure based on target_schema (simple version)
-        # For now, we return the mapped data as is or nested if needed
         return mapped_data
 
     def _flatten_dict(self, d: dict, parent_key: str = '', sep: str = '.') -> dict:

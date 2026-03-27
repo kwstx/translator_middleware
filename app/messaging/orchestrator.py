@@ -251,26 +251,28 @@ class Orchestrator:
             # Authorization check:
             # Does the EAT allow the 'translator' tool with the target protocol scope?
             src, tgt = source_protocol.upper(), target_protocol.upper()
-            allowed_tools = payload.get("allowed_tools", [])
+            allowed_tools = [t.upper() for t in payload.get("allowed_tools", [])]
             permissions = payload.get("scopes", {}) # map tool_id -> list of scopes
 
             # 1. Broad 'translator' tool check
-            if "translator" in allowed_tools:
-                translator_scopes = permissions.get("translator", [])
+            if "TRANSLATOR" in allowed_tools:
+                translator_scopes = permissions.get("translator", permissions.get("TRANSLATOR", []))
                 if "*" in translator_scopes or tgt in translator_scopes or f"{src}:{tgt}" in translator_scopes:
                     return payload
 
-            # 2. Specific protocol tool check (e.g. tool "MCP" allowed)
+            # 2. Specific tool check (e.g. tool "CLAUDE" or "SLACK" allowed)
+            # Check for direct naming or case-insensitive match
             if tgt in allowed_tools:
                 return payload
-
-            # 3. MiroFish Exception
-            if tgt == "MIROFISH" and "mirofish" in allowed_tools:
-                return payload
             
+            # 3. Check within scopes keys (case-insensitive)
+            permission_keys = [k.upper() for k in permissions.keys()]
+            if tgt in permission_keys:
+                return payload
+
             logger.error("Handoff unauthorized", user=payload.get("sub"), target=tgt)
             raise HandoffAuthorizationError(
-                f"EAT for user '{payload.get('sub')}' does not authorize handoff to protocol '{tgt}'."
+                f"EAT for user '{payload.get('sub')}' does not authorize handoff to tool/protocol '{tgt}'."
             )
 
         except Exception as exc:

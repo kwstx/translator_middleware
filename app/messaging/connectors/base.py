@@ -18,9 +18,19 @@ class BaseConnector(abc.ABC):
     and the tool's proprietary API format.
     """
 
-    def __init__(self, name: str, source_protocol: str = "MCP"):
-        self.name = name
+    def __init__(
+        self, 
+        name: str, 
+        source_protocol: str = "MCP", 
+        mapping_rules: Optional[Dict[str, str]] = None,
+        source_schema: Optional[Dict[str, Any]] = None,
+        target_schema: Optional[Dict[str, Any]] = None
+    ):
+        self.name = name.upper()
         self.source_protocol = source_protocol
+        self.mapping_rules = mapping_rules or {}
+        self.source_schema = source_schema or {"type": "object", "properties": {}}
+        self.target_schema = target_schema or {"type": "object", "properties": {}}
         self._translator = TranslatorEngine()
         self._mapper = SemanticMapper(settings.ONTOLOGY_PATH if hasattr(settings, "ONTOLOGY_PATH") else "app/semantic/protocols.owl")
 
@@ -66,17 +76,16 @@ class BaseConnector(abc.ABC):
     def reconcile_schema(self, data: Dict[str, Any], target_protocol: str) -> Dict[str, Any]:
         """
         Reconciles data schema using the SemanticMapper's DataSiloResolver.
+        Uses connector-specific mapping rules if provided.
         """
-        source_schema = {"type": "object", "properties": {}}
-        target_schema = {"type": "object", "properties": {}}
-        
         try:
             return self._mapper.DataSiloResolver(
                 source_data=data,
-                source_schema=source_schema,
-                target_schema=target_schema,
+                source_schema=self.source_schema,
+                target_schema=self.target_schema,
                 source_protocol=self.source_protocol,
-                target_protocol=target_protocol
+                target_protocol=target_protocol,
+                custom_rules=self.mapping_rules
             )
         except Exception as e:
             logger.warning("Schema reconciliation failed", error=str(e))
