@@ -16,7 +16,12 @@ class DelegationEngine:
     def __init__(self):
         self.orchestrator = Orchestrator()
 
-    async def delegate_subtask(self, command: str, source_agent: str = "Research Agent") -> Dict[str, Any]:
+    async def delegate_subtask(
+        self,
+        command: str,
+        source_agent: str = "Research Agent",
+        eat: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Delegates a subtask based on natural language intent.
         
@@ -59,7 +64,8 @@ class DelegationEngine:
             "metadata": {
                 "correlation_id": correlation_id,
                 "swarmId": "delegated-prediction-swarm",
-                "numAgents": 1000
+                "numAgents": 1000,
+                "eat": eat,
             }
         }
         
@@ -70,7 +76,8 @@ class DelegationEngine:
             result = await self.orchestrator.handoff_async(
                 source_message=source_message,
                 source_protocol="NL",
-                target_protocol=target_protocol
+                target_protocol=target_protocol,
+                eat=eat,
             )
             
             # 4. Process result and update memory/TUI

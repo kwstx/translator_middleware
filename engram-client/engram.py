@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import click
 import httpx
@@ -10,23 +10,63 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
+from cryptography.fernet import Fernet, InvalidToken
 
 console = Console()
 
 CONFIG_DIR = os.path.expanduser("~/.engram")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.enc")
+LEGACY_CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+KEY_FILE = os.path.join(CONFIG_DIR, "key")
 DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
 
+def _ensure_key() -> bytes:
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, "rb") as f:
+            return f.read()
+    key = Fernet.generate_key()
+    with open(KEY_FILE, "wb") as f:
+        f.write(key)
+    try:
+        os.chmod(KEY_FILE, 0o600)
+    except OSError:
+        pass
+    return key
+
+def _get_fernet() -> Fernet:
+    return Fernet(_ensure_key())
+
+def _encrypt_config(config: Dict[str, Any]) -> str:
+    payload = json.dumps(config).encode("utf-8")
+    return _get_fernet().encrypt(payload).decode("utf-8")
+
+def _decrypt_config(token: str) -> Dict[str, Any]:
+    payload = _get_fernet().decrypt(token.encode("utf-8"))
+    return json.loads(payload.decode("utf-8"))
+
+def _default_config() -> Dict[str, Any]:
+    return {"base_url": DEFAULT_BASE_URL, "token": None, "eat": None}
+
 def load_config() -> Dict[str, Any]:
-    if not os.path.exists(CONFIG_FILE):
-        return {"base_url": DEFAULT_BASE_URL, "token": None, "eat": None}
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return _decrypt_config(f.read().strip())
+        except (InvalidToken, json.JSONDecodeError, OSError) as exc:
+            console.print(f"[yellow]WARN[/] Encrypted config could not be read ({exc}). Reinitializing.")
+            return _default_config()
+    if os.path.exists(LEGACY_CONFIG_FILE):
+        with open(LEGACY_CONFIG_FILE, "r") as f:
+            legacy = json.load(f)
+        save_config(legacy)
+        return legacy
+    return _default_config()
 
 def save_config(config: Dict[str, Any]):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=4)
+        f.write(_encrypt_config(config))
 
 async def check_health(base_url: str) -> bool:
     root_url = base_url.replace("/api/v1", "")
@@ -85,10 +125,98 @@ def _render_task_results(results: Optional[Dict[str, Any]]) -> None:
         syntax = Syntax(json.dumps(output, indent=2), "json", theme="monokai", line_numbers=False)
         console.print(syntax)
 
-@click.group()
-def cli():
+def _render_status(config: Dict[str, Any]) -> None:
+    base_url = config["base_url"]
+    table = Table(title="Engram Status", show_header=False, box=None)
+    table.add_row("Base URL", base_url)
+    console.print(Panel(table, title="[bold orange1]ENGRAM CLIENT[/]", border_style="orange1"))
+
+async def _perform_login(config: Dict[str, Any], email: str, password: str) -> bool:
+    base_url = config["base_url"]
+    try:
+        response = await _request(
+            "POST",
+            base_url,
+            "/auth/login",
+            data={"username": email, "password": password},
+        )
+        if response.status_code == 200:
+            data = response.json()
+            config["token"] = data["access_token"]
+            save_config(config)
+            console.print("[green]OK[/] Login successful.")
+
+            console.print("[dim]Generating Engram Access Token (EAT)...[/]")
+            eat_resp = await _request(
+                "POST",
+                base_url,
+                "/auth/tokens/generate-eat",
+                headers=_auth_header(data["access_token"]),
+            )
+            if eat_resp.status_code == 200:
+                config["eat"] = eat_resp.json()["eat"]
+                save_config(config)
+                console.print("[green]OK[/] EAT generated and stored.")
+            else:
+                console.print(f"[yellow]WARN[/] EAT not generated: {eat_resp.text}")
+            return True
+        console.print(f"[red]ERROR[/] Login failed: {response.text}")
+        return False
+    except Exception as exc:
+        console.print(f"[red]ERROR[/] Connection error: {str(exc)}")
+        return False
+
+async def _perform_signup(config: Dict[str, Any], email: str, password: str) -> bool:
+    base_url = config["base_url"]
+    try:
+        response = await _request(
+            "POST",
+            base_url,
+            "/auth/signup",
+            json_body={"email": email, "password": password, "user_metadata": {"source": "cli_client"}},
+        )
+        if response.status_code == 201:
+            console.print("[green]OK[/] Account created successfully.")
+            return True
+        console.print(f"[red]ERROR[/] Signup failed: {response.text}")
+        return False
+    except Exception as exc:
+        console.print(f"[red]ERROR[/] Connection error: {str(exc)}")
+        return False
+
+def _interactive_auth_flow() -> None:
+    config = load_config()
+    if config.get("token") or config.get("eat"):
+        _render_status(config)
+        return
+    console.print(Panel(
+        "[bold]Welcome to Engram[/]\nCreate an account or log in to continue.",
+        border_style="orange1",
+    ))
+    choice = click.prompt(
+        "Choose an option",
+        type=click.Choice(["login", "signup"], case_sensitive=False),
+        default="login",
+        show_default=True,
+    )
+    email = click.prompt("Email", type=str)
+    password = click.prompt("Password", type=str, hide_input=True)
+    if choice == "signup":
+        confirm = click.prompt("Confirm Password", type=str, hide_input=True)
+        if confirm != password:
+            console.print("[red]ERROR[/] Passwords do not match.")
+            return
+        created = asyncio.run(_perform_signup(config, email, password))
+        if not created:
+            return
+    asyncio.run(_perform_login(config, email, password))
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx: click.Context):
     """Engram Client (thin API client)."""
-    pass
+    if ctx.invoked_subcommand is None:
+        _interactive_auth_flow()
 
 @cli.command()
 @click.option("--url", default=DEFAULT_BASE_URL, help="Backend API URL")
@@ -105,41 +233,18 @@ def init(url: str):
 def login(email, password):
     """Login to the Engram Identity Server."""
     config = load_config()
-    base_url = config["base_url"]
+    asyncio.run(_perform_login(config, email, password))
 
-    async def do_login():
-        try:
-            response = await _request(
-                "POST",
-                base_url,
-                "/auth/login",
-                data={"username": email, "password": password},
-            )
-            if response.status_code == 200:
-                data = response.json()
-                config["token"] = data["access_token"]
-                save_config(config)
-                console.print("[green]OK[/] Login successful.")
-
-                console.print("[dim]Generating Engram Access Token (EAT)...[/]")
-                eat_resp = await _request(
-                    "POST",
-                    base_url,
-                    "/auth/tokens/generate-eat",
-                    headers=_auth_header(data["access_token"]),
-                )
-                if eat_resp.status_code == 200:
-                    config["eat"] = eat_resp.json()["eat"]
-                    save_config(config)
-                    console.print("[green]OK[/] EAT generated and stored.")
-                else:
-                    console.print(f"[yellow]WARN[/] EAT not generated: {eat_resp.text}")
-            else:
-                console.print(f"[red]ERROR[/] Login failed: {response.text}")
-        except Exception as e:
-            console.print(f"[red]ERROR[/] Connection error: {str(e)}")
-
-    asyncio.run(do_login())
+@cli.command()
+@click.option("--email", prompt=True, help="User email")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="User password")
+@click.option("--login-after/--no-login-after", default=True, show_default=True, help="Login immediately after signup.")
+def signup(email, password, login_after):
+    """Create a new Engram account."""
+    config = load_config()
+    created = asyncio.run(_perform_signup(config, email, password))
+    if created and login_after:
+        asyncio.run(_perform_login(config, email, password))
 
 @cli.command()
 def status():
