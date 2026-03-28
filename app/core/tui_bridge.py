@@ -2,8 +2,14 @@ import asyncio
 from typing import Any, Dict, Optional
 
 # Shared queue for TUI events
-tui_event_queue: asyncio.Queue = asyncio.Queue()
+_tui_event_queue: Optional[asyncio.Queue] = None
 _tui_loop: Optional[asyncio.AbstractEventLoop] = None
+
+def get_tui_event_queue() -> asyncio.Queue:
+    global _tui_event_queue
+    if _tui_event_queue is None:
+        _tui_event_queue = asyncio.Queue()
+    return _tui_event_queue
 
 def register_tui_loop(loop: asyncio.AbstractEventLoop):
     """Register the event loop where the TUI is running."""
@@ -48,13 +54,13 @@ def tui_logger_processor(logger: Any, method_name: str, event_dict: Dict[str, An
     if plain_text:
         # We need to push to the queue. 
         if _tui_loop:
-            _tui_loop.call_soon_threadsafe(tui_event_queue.put_nowait, plain_text)
+            _tui_loop.call_soon_threadsafe(get_tui_event_queue().put_nowait, plain_text)
         else:
             # Fallback if loop not registered yet
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    loop.call_soon_threadsafe(tui_event_queue.put_nowait, plain_text)
+                    loop.call_soon_threadsafe(get_tui_event_queue().put_nowait, plain_text)
             except (RuntimeError, ValueError):
                 pass 
 

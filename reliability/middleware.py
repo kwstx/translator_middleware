@@ -12,7 +12,7 @@ from tenacity import (
     retry_if_exception_type,
     before_sleep_log,
 )
-from app.core.tui_bridge import tui_event_queue
+from app.core.tui_bridge import get_tui_event_queue
 from bridge.memory import memory_backend
 from app.core.exceptions import (
     TransientError, 
@@ -43,7 +43,7 @@ def get_idempotency_key(payload: Any, correlation_id: str, retry_count: int) -> 
 def log_to_tui(message: str):
     """Logs a message directly to the TUI trace panel."""
     try:
-        tui_event_queue.put_nowait(message)
+        get_tui_event_queue().put_nowait(message)
     except Exception:
         pass
 
@@ -108,9 +108,9 @@ class ReliabilityMiddleware:
 
         # 4. RETRYABLE EXECUTION
         @retry(
-            retry=retry_if_exception_type(TransientError),
+            retry=retry_if_exception_type((TransientError, NetworkError, RateLimitError)),
             stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
+            wait=wait_exponential(multiplier=1, min=1, max=5),
             before_sleep=before_sleep_log(logger, "DEBUG"),
             reraise=True
         )

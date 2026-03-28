@@ -4,6 +4,9 @@ import pytest
 
 # 1. Mock pyswip before any app code is imported
 mock_pyswip = MagicMock()
+mock_prolog = MagicMock()
+mock_prolog.query.return_value = [] # Ensure it's iterable
+mock_pyswip.Prolog.return_value = mock_prolog
 sys.modules["pyswip"] = mock_pyswip
 
 # 2. Mock owlready2 if needed
