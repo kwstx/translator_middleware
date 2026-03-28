@@ -70,7 +70,18 @@ class TaskExecutor:
                 "metadata": response.metadata,
             }
         elif isinstance(response, dict):
-            payload = response
+            if "response" not in response and "status" not in response:
+                payload = {"status": "success", "response": response}
+            elif "response" not in response and "output" in response:
+                payload = {
+                    "status": response.get("status", "success"),
+                    "response": response.get("output") or {},
+                    "error": response.get("error"),
+                    "response_protocol": response.get("protocol"),
+                    "metadata": response.get("metadata") or {},
+                }
+            else:
+                payload = response
         else:
             raise EngramSDKError("Response must be a TaskResponse or dict.")
 

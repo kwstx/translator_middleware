@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, RichLog, Input, Label, Button, ListView, ListItem
+from textual.widgets import Header, Footer, Static, RichLog, Input, Label, Button, ListView, ListItem, DataTable, TabbedContent, TabPane
 from textual.binding import Binding
 from textual import on, work
 from textual.screen import Screen
@@ -636,6 +636,175 @@ class WorkflowScheduleScreen(Screen):
         self.dismiss({"refresh": True})
 
 
+class DebugScreen(Screen):
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("r", "refresh", "Refresh Task List"),
+        Binding("t", "tail", "Tail Current Task"),
+    ]
+
+    def __init__(self, app_ref: "EngramTUI"):
+        super().__init__()
+        self.app_ref = app_ref
+        self.selected_task_id = None
+        self.last_event_timestamp = 0
+        self.tailing = False
+
+    def compose(self) -> ComposeResult:
+        with Container(id="debug-container"):
+            yield Label("Developer Debug Console", id="debug-title")
+            with Horizontal(id="debug-main-layout"):
+                with Vertical(id="debug-list-panel"):
+                    yield Label("Recent Tasks", classes="debug-subtitle")
+                    yield DataTable(id="task-debug-table")
+                    with Horizontal(classes="debug-actions"):
+                        yield Button("Refresh", id="debug-refresh-btn")
+                        yield Button("Inspect", id="debug-inspect-btn", variant="primary")
+                
+                with Vertical(id="debug-detail-panel"):
+                    yield Label("Task details (Select a task)", id="debug-detail-header", classes="debug-subtitle")
+                    with TabbedContent(id="debug-tabs"):
+                        with TabPane("Execution Log", id="tab-log"):
+                            yield RichLog(id="debug-event-log", highlight=True, markup=True)
+                        with TabPane("Protocol Trace", id="tab-trace"):
+                            with Horizontal():
+                                with Vertical(classes="protocol-pane"):
+                                    yield Label("Engram (Source)", classes="protocol-title")
+                                    yield RichLog(id="debug-trace-source")
+                                with Vertical(classes="protocol-pane"):
+                                    yield Label("Tool (Target)", classes="protocol-title")
+                                    yield RichLog(id="debug-trace-target")
+                        with TabPane("Plan", id="tab-plan"):
+                            yield RichLog(id="debug-task-plan")
+            
+            with Horizontal(id="debug-footer"):
+                yield Button("Close", id="debug-close-btn")
+                yield Label("Press [bold]R[/] to refresh list | [bold]T[/] to toggle live tail", id="debug-status-hint")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#task-debug-table", DataTable)
+        table.add_columns("ID", "Command", "Status", "Updated")
+        table.cursor_type = "row"
+        self.run_worker(self._load_tasks(), thread=False)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_refresh(self) -> None:
+        self.run_worker(self._load_tasks(), thread=False)
+
+    @work(exclusive=True)
+    async def _load_tasks(self) -> None:
+        table = self.query_one("#task-debug-table", DataTable)
+        table.clear()
+        
+        response = await self.app_ref._authed_request("GET", "/tasks?limit=25")
+        if response.status_code != 200:
+            return
+            
+        tasks = response.json()
+        for t in tasks:
+            tid = str(t.get("id"))
+            cmd = t.get("source_message", {}).get("command", "N/A")
+            if len(cmd) > 30: cmd = cmd[:27] + "..."
+            status = t.get("status", "unknown")
+            updated = t.get("updated_at", "")[:19].replace("T", " ")
+            table.add_row(tid, cmd, status, updated, key=tid)
+
+    @on(DataTable.RowSelected, "#task-debug-table")
+    def _row_selected(self, event: DataTable.RowSelected) -> None:
+        self.selected_task_id = event.row_key.value
+        self.run_worker(self._inspect_task(self.selected_task_id), thread=False)
+
+    @on(Button.Pressed, "#debug-refresh-btn")
+    def _handle_refresh(self) -> None:
+        self.action_refresh()
+
+    @on(Button.Pressed, "#debug-inspect-btn")
+    def _handle_inspect(self) -> None:
+        table = self.query_one("#task-debug-table", DataTable)
+        if table.cursor_row is not None:
+            row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+            self.selected_task_id = row_key
+            self.run_worker(self._inspect_task(self.selected_task_id), thread=False)
+
+    @on(Button.Pressed, "#debug-close-btn")
+    def _handle_close(self) -> None:
+        self.action_close()
+
+    async def _inspect_task(self, task_id: str) -> None:
+        self.query_one("#debug-detail-header", Label).update(f"Inspecting Task: [bold cyan]{task_id}[/]")
+        
+        # Reset logs
+        self.query_one("#debug-event-log", RichLog).clear()
+        self.query_one("#debug-trace-source", RichLog).clear()
+        self.query_one("#debug-trace-target", RichLog).clear()
+        self.query_one("#debug-task-plan", RichLog).clear()
+        
+        # Load task details
+        response = await self.app_ref._authed_request("GET", f"/tasks/{task_id}")
+        if response.status_code == 200:
+            task = response.json()
+            plan = task.get("source_message", {}).get("plan")
+            if plan:
+                plan_log = self.query_one("#debug-task-plan", RichLog)
+                plan_log.write(json.dumps(plan, indent=2))
+        
+        # Load events
+        await self._load_events(task_id)
+
+    async def _load_events(self, task_id: str) -> None:
+        log = self.query_one("#debug-event-log", RichLog)
+        response = await self.app_ref._authed_request("GET", f"/tasks/{task_id}/events")
+        if response.status_code == 200:
+            events = response.json()
+            for ev in events:
+                self._render_event(ev)
+                
+    def _render_event(self, event: Dict[str, Any]) -> None:
+        log = self.query_one("#debug-event-log", RichLog)
+        etype = event.get("event_type", "INFO")
+        msg = event.get("message", "")
+        ts = event.get("created_at", "")[11:19]
+        
+        color = "white"
+        if "error" in etype.lower(): color = "red"
+        elif "translation" in etype.lower(): color = "magenta"
+        elif "handoff" in etype.lower(): color = "cyan"
+        
+        log.write(f"[[dim]{ts}[/]] [[bold {color}]{etype.upper()}[/]] {msg}")
+        
+        # Also route to traces if it's a translation event
+        data = event.get("data") or {}
+        if "translation" in etype.lower() and "payload" in data:
+            if "engram" in etype.lower():
+                src_log = self.query_one("#debug-trace-source", RichLog)
+                src_log.clear()
+                src_log.write(json.dumps(data.get("payload"), indent=2))
+            else:
+                tgt_log = self.query_one("#debug-trace-target", RichLog)
+                tgt_log.clear()
+                tgt_log.write(json.dumps(data.get("payload"), indent=2))
+
+    def action_tail(self) -> None:
+        if not self.selected_task_id:
+            return
+        self.tailing = not self.tailing
+        hint = self.query_one("#debug-status-hint", Label)
+        if self.tailing:
+            hint.update("LIVE TAIL: [bold green]ACTIVE[/] | Press [bold]T[/] to stop")
+            self.run_worker(self._tail_worker(), thread=False)
+        else:
+            hint.update("Press [bold]R[/] to refresh list | [bold]T[/] to toggle live tail")
+
+    async def _tail_worker(self) -> None:
+        while self.tailing and self.selected_task_id:
+            # Get only new events
+            # We'd need accurate 'since' logic, for now we just refresh all
+            await self._load_events(self.selected_task_id)
+            await asyncio.sleep(2)
+
+
 class WorkflowRunsScreen(Screen):
     BINDINGS = [
         Binding("escape", "close", "Close"),
@@ -949,6 +1118,86 @@ class EngramTUI(App):
     .service-btn {
         width: 25%;
     }
+
+    #debug-container {
+        width: 95%;
+        height: 95%;
+        border: double #d35400;
+        background: #0f1115;
+        margin: 1 auto;
+        padding: 1;
+    }
+
+    #debug-title {
+        content-align: center middle;
+        text-style: bold;
+        color: #d35400;
+        margin-bottom: 1;
+        background: #1a1e26;
+        height: 3;
+    }
+
+    .debug-subtitle {
+        text-style: bold underline;
+        color: #f39c12;
+        margin-bottom: 1;
+    }
+
+    #debug-main-layout {
+        height: 1fr;
+    }
+
+    #debug-list-panel {
+        width: 35%;
+        border-right: solid #2c3e50;
+        padding: 0 1;
+    }
+
+    #debug-detail-panel {
+        width: 65%;
+        padding: 0 1;
+    }
+
+    .debug-actions {
+        height: 3;
+        margin-top: 1;
+    }
+
+    #debug-tabs {
+        height: 1fr;
+    }
+
+    .protocol-pane {
+        width: 1fr;
+        border: solid #2c3e50;
+        margin: 0 1;
+        background: #12151c;
+    }
+
+    .protocol-title {
+        text-style: bold;
+        color: #3498db;
+        content-align: center middle;
+        background: #1a1e26;
+    }
+
+    #debug-event-log, #debug-trace-source, #debug-trace-target, #debug-task-plan {
+        height: 1fr;
+        background: #0f1115;
+    }
+
+    #debug-footer {
+        height: 3;
+        background: #1a1e26;
+        border-top: solid #d35400;
+        padding: 0 2;
+        align: middle;
+    }
+
+    #debug-status-hint {
+        margin-left: 2;
+        color: #bdc3c7;
+    }
     """
 
     BINDINGS = [
@@ -959,8 +1208,10 @@ class EngramTUI(App):
         Binding("w", "workflows", "Workflows", show=True),
     ]
 
-    def __init__(self):
+    def __init__(self, base_url: Optional[str] = None):
         super().__init__()
+        self.cli_base_url = base_url
+        self.initial_screen = None
         self.token: Optional[str] = None
         self.eat: Optional[str] = None
         self.base_url: str = DEFAULT_BASE_URL
@@ -1039,6 +1290,8 @@ class EngramTUI(App):
                 yield Label("/logout - Sign out", classes="stat-item")
                 yield Label("/services - Refresh services", classes="stat-item")
                 yield Label("/connect <provider> - Connect service", classes="stat-item")
+                yield Label("/tasks [limit] - View recent tasks", classes="stat-item")
+                yield Label("/debug - Open developer console", classes="stat-item")
 
                 with Container(id="services-panel"):
                     yield Label("CONNECTED SERVICES", classes="sidebar-title")
@@ -1072,6 +1325,10 @@ class EngramTUI(App):
         
         # Initial discovery
         self.run_worker(self.refresh_available_providers(), thread=False)
+        
+        # NEW: Handle initial screen (e.g. from 'engram debug')
+        if self.initial_screen == "debug":
+            self.push_screen(DebugScreen(self))
 
     @work(exclusive=True, thread=True)
     def message_receiver(self):
@@ -1339,6 +1596,8 @@ class EngramTUI(App):
             self.run_worker(self.refresh_connected_services(show_log=True), thread=False)
         elif cmd == "/workflows":
             self.push_screen(WorkflowListScreen(self))
+        elif cmd == "/debug":
+            self.push_screen(DebugScreen(self))
         elif cmd.startswith("/tasks"):
             parts = cmd.split()
             limit = 10

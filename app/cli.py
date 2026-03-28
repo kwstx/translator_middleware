@@ -52,7 +52,7 @@ def check_external_dependencies():
             rprint("[dim]Install via apt: 'sudo apt install swi-prolog'[/]")
         rprint("")
 
-def start_runtime(host: str = "127.0.0.1", port: int = 8000):
+def start_runtime(host: str = "127.0.0.1", port: int = 8000, initial_screen: Optional[str] = None):
     """Launches the unified Engram runtime (API + TUI)."""
     try:
         from rich import print as rprint
@@ -80,7 +80,7 @@ def start_runtime(host: str = "127.0.0.1", port: int = 8000):
     
     # 1. Display Brand Banner
     rprint(Panel.fit(
-        "[bold orange1] ENGRAM PROTOCOL BRIDGE [/]\n[dim]Multi-Protocol Semantic Agent Translation[/]",
+        "[bold orange1] ENGRAM DEBUG CONSOLE [/]" if initial_screen == "debug" else "[bold orange1] ENGRAM PROTOCOL BRIDGE [/]\n[dim]Multi-Protocol Semantic Agent Translation[/]",
         subtitle=f"[bold]v0.1.0 | Gateway: {host}:{port}[/]",
         border_style="orange1"
     ))
@@ -110,14 +110,15 @@ def start_runtime(host: str = "127.0.0.1", port: int = 8000):
     # 4. Give API a short head start
     time.sleep(1.5)
     rprint(" ✅ [bold green]Backend Ready.[/]")
-    rprint(" 🖥️  [cyan]Launching TUI Environment...[/]")
+    rprint(f" 🖥️  [cyan]Launching {'Debug Console' if initial_screen == 'debug' else 'TUI Environment'}...[/]")
     time.sleep(0.5)
     
     # 5. Start TUI in main thread
     try:
-        # Override the base_url in session config if port/host was changed via CLI
         # EngramTUI uses this for its API calls
         tui = EngramTUI(base_url=f"http://{host}:{port}/api/v1")
+        if initial_screen:
+            tui.initial_screen = initial_screen
         run(tui)
     except Exception as e:
         rprint(f"❌ [bold red]TUI Error:[/] {e}")
@@ -133,6 +134,7 @@ def main():
     # Commands
     subparsers.add_parser("init", help="Initialize configuration and directories")
     subparsers.add_parser("run", help="Start the Engram daemon and TUI dashboard (default)")
+    subparsers.add_parser("debug", help="Launch the developer debug/monitoring dashboard")
     
     # Default behavior if no command or just help
     if len(sys.argv) == 1:
@@ -148,6 +150,9 @@ def main():
     elif args.command == "run" or not args.command:
         # If unknown args exist and command is None, it might be just flags
         start_runtime(host=args.host, port=args.port)
+    elif args.command == "debug":
+        # Launch directly into debug mode if requested
+        start_runtime(host=args.host, port=args.port, initial_screen="debug")
     else:
         parser.print_help()
 

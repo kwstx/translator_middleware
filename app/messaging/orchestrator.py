@@ -10,6 +10,7 @@ from app.core.metrics import record_translation_error, record_translation_succes
 from app.core.security import verify_engram_token
 from app.messaging.connectors.registry import get_default_registry
 from app.core.logging import bind_context
+from app.core.execution_events import emit_execution_event
 
 logger = structlog.get_logger(__name__)
 
@@ -281,7 +282,7 @@ class Orchestrator:
             logger.error("EAT verification error", error=str(exc))
             raise HandoffAuthorizationError(f"EAT Verification failed: {str(exc)}")
 
-    def handoff(
+    async def handoff(
         self,
         source_message: Dict[str, Any],
         source_protocol: str,
@@ -408,9 +409,29 @@ class Orchestrator:
                 target_protocol=hop_tgt,
             )
             try:
+                # NEW: Emit debug events for translation
+                task_id = source_message.get("metadata", {}).get("task_id")
+                
+                await emit_execution_event(
+                    "translation.engram",
+                    f"🔄 [magenta]Hop {i+1}:[/] Translating {hop_src} to {hop_tgt}",
+                    task_id=task_id,
+                    db=None, # Usually called from sync context or we don't have db here
+                    data={"payload": current_message, "connector": f"{hop_src}->{hop_tgt}", "step": i+1}
+                )
+
                 current_message = self.translator.translate(
                     current_message, hop_src, hop_tgt
                 )
+
+                await emit_execution_event(
+                    "translation.request",
+                    f"✨ [green]Hop {i+1} OK:[/] Resulting {hop_tgt} payload generated.",
+                    task_id=task_id,
+                    db=None,
+                    data={"payload": current_message, "connector": f"{hop_src}->{hop_tgt}", "step": i+1}
+                )
+
                 record_translation_success("orchestrator", hop_src, hop_tgt)
             except Exception as e:
                 logger.error("Translation hop failed", source_protocol=hop_src, target_protocol=hop_tgt, error=str(e))
@@ -482,7 +503,7 @@ class Orchestrator:
                 )
 
         # Delegate standard handoff to the sync implementation
-        return self.handoff(source_message, source_protocol, target_protocol, eat)
+        return await self.handoff(source_message, source_protocol, target_protocol, eat)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,17 @@ flowchart LR
 
 ---
 
+## Developer Toolkit (SDK + Examples)
+
+If you want to integrate your own tools quickly, start here:
+
+* `docs/DEVELOPER_TOOLKIT.md`
+* `examples/engram_toolkit/README.md`
+
+These cover SDK installation, tool registration, agent connection, and task execution.
+
+---
+
 ## MiroFish Swarm Bridge
 
 The **MiroFish Swarm Bridge** connects Engram's protocol translation pipeline to a [MiroFish](https://github.com/666ghj/MiroFish) simulation. Agents can pipe messages and external context into a swarm simulation and receive predictions or reports back.
