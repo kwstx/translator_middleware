@@ -502,17 +502,17 @@ The unified schema covers four payload types. Your agent constructs one of these
 
 ## One-Command Quick Start
 
-Engram now features a unified runtime that launches the FastAPI bridge, background orchestration services (Discovery + Task Worker), and a real-time TUI dashboard simultaneously.
+Engram provides a "Single Command Runtime Experience" — a unified entry point that launches the FastAPI bridge, background orchestration services (Discovery + Task Worker), and the real-time TUI dashboard simultaneously.
 
 ### Installation & Run
 
-#### **Windows (Recommended)**
+#### **Windows**
 ```powershell
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Launch the unified engine
-.\engram.bat run
+# 2. Launch Engram (Starts backend + TUI immediately)
+.\engram.bat
 ```
 
 #### **Linux / macOS**
@@ -520,9 +520,10 @@ pip install -r requirements.txt
 # 1. Run the auto-installer
 chmod +x setup.sh && ./setup.sh
 
-# 2. Launch the unified engine
-engram run
+# 2. Launch Engram
+python app/cli.py
 ```
+
 
 Once running, the Swagger UI API documentation is available at:  
 `http://localhost:8000/docs`

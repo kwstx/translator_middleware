@@ -23,39 +23,82 @@ def init_config():
 
 def start_runtime():
     """Launches the unified Engram runtime (API + TUI)."""
-    # Import here to avoid circular dependencies or heavy startup if not running the daemon
-    import uvicorn
-    import threading
-    import time
-    from app.main import app
-    from textual import run
-    from tui.app import EngramTUI
+    try:
+        import uvicorn
+        import threading
+        import time
+        from rich import print as rprint
+        from rich.panel import Panel
+        from rich.console import Console
+    except ImportError as e:
+        print(f"❌ Error: Missing dependency: {e}")
+        print("Please run: pip install -r requirements.txt")
+        sys.exit(1)
 
-    print("🚀 Starting Engram Protocol Bridge...")
+    try:
+        from app.main import app
+        from textual import run
+        from tui.app import EngramTUI, load_config
+    except ImportError as e:
+        print(f"❌ Error: Could not load Engram modules: {e}")
+        print("Ensure you are running from the project root.")
+        sys.exit(1)
+
+    console = Console()
     
-    # 1. Start API in background thread
+    # 1. Display Brand Banner
+    rprint("\n")
+    rprint(Panel.fit(
+        "[bold orange1] ENGRAM PROTOCOL BRIDGE [/]\n[dim]Multi-Protocol Semantic Agent Translation[/]",
+        subtitle="[bold]Runtime Environment v0.1.0[/]",
+        border_style="orange1"
+    ))
+    
+    # 2. Load Session Info
+    config = load_config()
+    email = config.get("email")
+    if email:
+        rprint(f" 👤 Session: [bold green]Logged in as {email}[/]")
+    else:
+        rprint(" 👤 Session: [dim]No active session found. Authentication required.[/]")
+    
+    rprint(" 📡 [cyan]Initializing Backend Engine...[/]")
+
+    # 3. Start API in background thread
     def run_api():
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error", access_log=False)
+        # Using warning log level to reduce noise while starting
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning", access_log=False)
     
     api_thread = threading.Thread(target=run_api, daemon=True)
     api_thread.start()
     
-    # 2. Give API a head start
-    time.sleep(1.5)
+    # 4. Give API a short head start
+    time.sleep(1.2)
+    rprint(" ✅ [bold green]Backend Ready.[/]")
+    rprint(" 🖥️  [cyan]Launching TUI Environment...[/]")
+    time.sleep(0.5)
     
-    # 3. Start TUI in main thread
-    run(EngramTUI)
+    # 5. Start TUI in main thread
+    try:
+        run(EngramTUI())
+    except Exception as e:
+        rprint(f"❌ [bold red]TUI Error:[/] {e}")
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="Engram CLI tool.")
     subparsers = parser.add_subparsers(dest="command")
     
-    # Init command
-    subparsers.add_parser("init", help="Initialize configuration")
-    
-    # Run command
+    # Explicit commands
+    subparsers.add_parser("init", help="Initialize configuration and directories")
     subparsers.add_parser("run", help="Start the Engram daemon and TUI dashboard")
     
+    # Handle help and empty args
+    if len(sys.argv) == 1:
+        # Default behavior: Single command runtime
+        start_runtime()
+        return
+
     args = parser.parse_args()
     
     if args.command == "init":
@@ -63,7 +106,11 @@ def main():
     elif args.command == "run":
         start_runtime()
     else:
-        parser.print_help()
+        # argparse handles the rest
+        if not args.command:
+            start_runtime()
 
 if __name__ == "__main__":
     main()
+
+
