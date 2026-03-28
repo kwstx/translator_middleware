@@ -1,0 +1,50 @@
+﻿--- Testing Extensibility: Adding a New Tool (HYPOTHETICAL) ---
+2026-03-28 14:01:49 [debug    ] ProtocolGraph edge added       source_protocol=A2A target_protocol=MCP weight=1.0
+2026-03-28 14:01:49 [debug    ] ProtocolGraph edge added       source_protocol=NL target_protocol=MCP weight=1.0
+2026-03-28 14:01:49 [info     ] ProtocolGraph built            edge_count=2 node_count=3
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=CLAUDE
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=PERPLEXITY
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=SLACK
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=OPENCLAW
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=MIROFISH
+2026-03-28 14:01:49 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:01:49 [debug    ] Connector registered           name=HYPOTHETICAL
+
+Scenario 1: Authorized access to HYPOTHETICAL tool
+2026-03-28 14:01:54 [info     ] Handoff async authorized for tool source_protocol=MCP target_protocol=HYPOTHETICAL tool=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [info     ] Resolving data silo from MCP to HYPOTHETICAL connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [info     ] Source data validated successfully. connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [debug    ] Flattened data: {'coord': 'analyze_data', 'payload.dataset_id': 'DS-99', 'payload.depth': 'full'} connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [warning  ] Schema reconciliation failed   connector=HYPOTHETICAL error='Predicate without definition (or error in resolver): map_field/2' source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [debug    ] Connector: translated request  connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [info     ] Executing call to Hypothetical Tool connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [debug    ] Connector: received response   connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:01:54 [info     ] Connector execution successful connector=HYPOTHETICAL duration=0.04076194763183594 source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+Result Status: success
+Result Payload: {'coord': 'hypothetical_ack', 'result': {'processed_by': 'hypothetical_engine_v1', 'original_action': 'analyze_data'}, 'msg': "Hypothetical action 'analyze_data' executed successfully."}
+OK: Authorized access worked as expected.
+
+Scenario 2: Unauthorized access to HYPOTHETICAL tool
+2026-03-28 14:01:59 [error    ] Handoff unauthorized           connector=HYPOTHETICAL source_protocol=MCP target=HYPOTHETICAL target_protocol=HYPOTHETICAL user=1016b33e-85e7-4722-b705-2f05c9837c16 user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+Caught Expected Error: EAT for user '1016b33e-85e7-4722-b705-2f05c9837c16' does not authorize handoff to tool/protocol 'HYPOTHETICAL'.
+OK: Unauthorized access was correctly blocked.
+
+Scenario 3: Access via broad TRANSLATOR scope
+2026-03-28 14:02:03 [info     ] Handoff async authorized for tool connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL tool=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [info     ] Resolving data silo from MCP to HYPOTHETICAL connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [info     ] Source data validated successfully. connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [debug    ] Flattened data: {'coord': 'analyze_data', 'payload.dataset_id': 'DS-99', 'payload.depth': 'full'} connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [warning  ] Schema reconciliation failed   connector=HYPOTHETICAL error='Predicate without definition (or error in resolver): map_field/2' source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [debug    ] Connector: translated request  connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [info     ] Executing call to Hypothetical Tool connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [debug    ] Connector: received response   connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+2026-03-28 14:02:03 [info     ] Connector execution successful connector=HYPOTHETICAL duration=0.0046234130859375 source_protocol=MCP target_protocol=HYPOTHETICAL user_id=1016b33e-85e7-4722-b705-2f05c9837c16
+Result Status: success
+OK: Broad TRANSLATOR scope worked.
+
+--- Extensibility Test Completed ---

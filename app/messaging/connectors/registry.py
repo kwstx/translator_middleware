@@ -50,11 +50,13 @@ def get_default_registry() -> ConnectorRegistry:
         from .slack import SlackConnector
         from .openclaw import OpenClawConnector
         from .mirofish import MiroFishConnector
+        from .hypothetical import HypotheticalConnector
         
         _registry.register(ClaudeConnector())
         _registry.register(PerplexityConnector())
         _registry.register(SlackConnector())
         _registry.register(OpenClawConnector())
         _registry.register(MiroFishConnector())
+        _registry.register(HypotheticalConnector())
         
     return _registry
