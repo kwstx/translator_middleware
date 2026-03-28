@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field, Column
+from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import Enum, ARRAY, String, text, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from typing import Optional, Dict, Any, List
@@ -97,6 +97,61 @@ class AgentRegistry(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True)),
     )
     is_active: bool = Field(default=True)
+    
+    tools: List["ToolRegistry"] = Relationship(
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
+        back_populates="agent"
+    )
+
+
+class ToolRegistry(SQLModel, table=True):
+    __tablename__ = "tool_registry"
+    
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    agent_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("agent_registry.agent_id"), index=True, nullable=False)
+    )
+    agent: "AgentRegistry" = Relationship(back_populates="tools")
+    name: str = Field(index=True, nullable=False)
+    description: str = Field(nullable=False)
+    version: Optional[str] = None
+    tags: List[str] = Field(
+        default=[],
+        sa_column=Column(ARRAY(String))
+    )
+    
+    # Detailed actions provided by the tool
+    # Example item: {"name": "send", "description": "Send a message", "input_schema": {...}}
+    actions: List[Dict[str, Any]] = Field(
+        default=[],
+        sa_column=Column(JSONB, server_default=text("'[]'::jsonb"))
+    )
+    
+    # Schemas for the tool if it acts as a single function
+    input_schema: Dict[str, Any] = Field(
+        default={},
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
+    )
+    output_schema: Dict[str, Any] = Field(
+        default={},
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
+    )
+    
+    # Capability requirements for calling this tool
+    required_permissions: List[str] = Field(
+        default=[],
+        sa_column=Column(ARRAY(String))
+    )
+    
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
+    )
+
 
 class SemanticOntology(SQLModel, table=True):
     __tablename__ = "semantic_ontology"

@@ -127,16 +127,92 @@ async def mirofish_gods_eye(
         }
     )
 
+class RegisterToolRequest(BaseModel):
+    name: str = Field(..., description="The name of the tool.")
+    description: str = Field(..., description="What the tool does.")
+    actions: List[Dict[str, Any]] = Field(default_factory=list, description="List of specific actions/functions.")
+    input_schema: Dict[str, Any] = Field(default_factory=dict, description="Input JSON schema.")
+    output_schema: Dict[str, Any] = Field(default_factory=dict, description="Output JSON schema.")
+    required_permissions: List[str] = Field(default_factory=list, description="Scopes required to use this tool.")
+    version: Optional[str] = Field(None, description="Tool version string.")
+    tags: List[str] = Field(default_factory=list, description="Categorization tags.")
+
+class RegisterAgentRequest(BaseModel):
+    agent_id: UUID = Field(..., description="Unique UUID for the agent.")
+    supported_protocols: List[str] = Field(..., description="Protocols supported by this agent.")
+    capabilities: List[str] = Field(default_factory=list, description="Human-readable strings describing features.")
+    semantic_tags: List[str] = Field(default_factory=list, description="Ontological tags for discovery.")
+    endpoint_url: str = Field(..., description="The base URL where this agent can be reached.")
+    tools: List[RegisterToolRequest] = Field(default_factory=list, description="Detailed tool metadata.")
+
 @router.post(
     "/register",
     response_model=AgentRegistry,
     tags=["Registry"],
-    summary="Register an agent",
-    description="Registers a new agent with its supported protocols and capabilities.",
+    summary="Register an agent and its tools",
+    description="Registers a new agent along with detailed tool definitions for discovery.",
 )
-async def register_agent(agent: AgentRegistry, db: Session = Depends(get_session)):
-    """Registers a new agent with its supported protocols and capabilities."""
-    db.add(agent)
+async def register_agent(request: RegisterAgentRequest, db: Session = Depends(get_session)):
+    """Registers a new agent and its associated tools."""
+    from app.db.models import ToolRegistry
+    
+    # 1. Create or Update Agent
+    stmt = select(AgentRegistry).where(AgentRegistry.agent_id == request.agent_id)
+    result = await db.execute(stmt)
+    agent = result.scalars().first()
+    
+    if agent:
+        agent.supported_protocols = request.supported_protocols
+        agent.capabilities = request.capabilities
+        agent.semantic_tags = request.semantic_tags
+        agent.endpoint_url = request.endpoint_url
+        agent.last_seen = datetime.now(timezone.utc)
+        agent.is_active = True
+    else:
+        agent = AgentRegistry(
+            agent_id=request.agent_id,
+            supported_protocols=request.supported_protocols,
+            capabilities=request.capabilities,
+            semantic_tags=request.semantic_tags,
+            endpoint_url=request.endpoint_url,
+        )
+        db.add(agent)
+    
+    await db.flush() # Ensure agent is in session so we can link tools
+
+    # 2. Register Tools
+    for tool_req in request.tools:
+        # Check if tool already exists for this agent
+        tool_stmt = select(ToolRegistry).where(
+            ToolRegistry.agent_id == agent.agent_id,
+            ToolRegistry.name == tool_req.name
+        )
+        tool_result = await db.execute(tool_stmt)
+        tool = tool_result.scalars().first()
+        
+        if tool:
+            tool.description = tool_req.description
+            tool.actions = tool_req.actions
+            tool.input_schema = tool_req.input_schema
+            tool.output_schema = tool_req.output_schema
+            tool.required_permissions = tool_req.required_permissions
+            tool.version = tool_req.version
+            tool.tags = tool_req.tags
+            tool.updated_at = datetime.now(timezone.utc)
+        else:
+            tool = ToolRegistry(
+                agent_id=agent.agent_id,
+                name=tool_req.name,
+                description=tool_req.description,
+                actions=tool_req.actions,
+                input_schema=tool_req.input_schema,
+                output_schema=tool_req.output_schema,
+                required_permissions=tool_req.required_permissions,
+                version=tool_req.version,
+                tags=tool_req.tags,
+            )
+            db.add(tool)
+
     await db.commit()
     await db.refresh(agent)
     return agent

@@ -5,11 +5,43 @@ from .exceptions import EngramAuthError
 
 
 class AuthClient:
-    def __init__(self, transport: EngramTransport) -> None:
+    def __init__(
+        self,
+        transport: EngramTransport,
+        *,
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+        eat_expires_days: int = 30,
+    ) -> None:
         self._transport = transport
+        self._email = email
+        self._password = password
+        self._eat_expires_days = eat_expires_days
 
-    def login(self, email: str, password: str) -> str:
-        payload = {"username": email, "password": password}
+    def set_credentials(self, email: Optional[str], password: Optional[str]) -> None:
+        if email:
+            self._email = email
+        if password:
+            self._password = password
+
+    def set_eat_expires_days(self, days: int) -> None:
+        self._eat_expires_days = days
+
+    def get_session_token(self) -> Optional[str]:
+        return self._transport.token
+
+    def get_eat(self) -> Optional[str]:
+        return self._transport.eat
+
+    def login(self, email: Optional[str] = None, password: Optional[str] = None) -> str:
+        login_email = email or self._email
+        login_password = password or self._password
+        if not login_email or not login_password:
+            raise EngramAuthError("Email and password are required to login.")
+
+        self._email = login_email
+        self._password = login_password
+        payload = {"username": login_email, "password": login_password}
         response = self._transport.request_json(
             "POST",
             "/auth/login",
@@ -40,10 +72,13 @@ class AuthClient:
             auth=None,
         )
 
-    def generate_eat(self) -> str:
+    def generate_eat(self, *, expires_days: Optional[int] = None) -> str:
+        if not self._transport.token:
+            self.ensure_session_token()
         response = self._transport.request_json(
             "POST",
             "/auth/tokens/generate-eat",
+            params={"expires_days": expires_days or self._eat_expires_days},
             auth="token",
         )
         eat = response.get("eat")
@@ -57,3 +92,20 @@ class AuthClient:
 
     def set_eat(self, eat: Optional[str]) -> None:
         self._transport.set_eat(eat)
+
+    def ensure_session_token(self) -> Optional[str]:
+        if self._transport.token:
+            return self._transport.token
+        return self.login()
+
+    def ensure_eat(self) -> Optional[str]:
+        if self._transport.eat:
+            return self._transport.eat
+        return self.generate_eat()
+
+    def refresh_session_token(self) -> Optional[str]:
+        return self.login()
+
+    def refresh_eat(self) -> Optional[str]:
+        self.ensure_session_token()
+        return self.generate_eat()
