@@ -142,13 +142,12 @@ if __name__ == "__main__":
     import threading
     import uvicorn
     import time
-    from textual import run
     from tui.app import EngramTUI
 
     # 1. Start the FastAPI server on port 8000 in a background thread
     def start_api():
         # Running on localhost for the bridge
-        uvicorn.run(app, host="0.0.0.0", port=5001, log_level="error", access_log=False)
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error", access_log=False)
 
     api_thread = threading.Thread(target=start_api, daemon=True)
     api_thread.start()
@@ -157,5 +156,4 @@ if __name__ == "__main__":
     time.sleep(1)
 
     # 2. Launch the Engram TUI (owns the main thread)
-    # This design allows the CLI to be the single entrypoint for the whole runtime.
-    run(EngramTUI)
+    EngramTUI().run()

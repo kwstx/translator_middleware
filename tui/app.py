@@ -876,11 +876,7 @@ class WorkflowRunsScreen(Screen):
         self.dismiss(None)
 
 class WelcomeScreen(Screen):
-    BINDINGS = [
-        Binding("enter", "continue", "Continue"),
-        Binding("escape", "continue", "Continue"),
-    ]
-
+    """Initial splash screen on app boot."""
     def compose(self) -> ComposeResult:
         LOGO_BLOCKY = r"""
   _____   _   _    ____   ____       _      __  __ 
@@ -894,8 +890,10 @@ class WelcomeScreen(Screen):
             yield Static(f"[#FF9966]{LOGO_BLOCKY}[/]", id="welcome-logo")
             yield Label("Press [bold]Enter[/] to continue", id="welcome-continue")
 
-    def action_continue(self) -> None:
-        self.app.pop_screen()
+    async def on_key(self, event) -> None:
+        # Use simple key capture to prevent BINDINGS bug from locking the user out
+        if event.key in ("enter", "escape"):
+            self.app.pop_screen()
 
 # ASCII header
 LOGO = r"""[#2bdc8d]
@@ -1439,15 +1437,14 @@ class EngramTUI(App):
             self._set_auth_visible(False)
             try:
                 # Perform a quick heartbeat check to port 8000
-                log_view.write("[dim]System:[/] Checking connectivity to backend...")
+                log_view.write("[dim]System:[/] Checking connectivity to backend [bold]"+self.base_url+"[/]...")
                 self.query_one("#command-input").focus()
             except Exception:
                 pass
         else:
             self._set_auth_visible(True)
 
-        log_view.write("[dim]System:[/] Interface ready. Endpoint: [bold]" + self.base_url + "[/]")
-        log_view.write("[dim]System:[/] [green]Success:[/] Connected to Engram Pipeline.")
+        log_view.write("[dim]System:[/] [green]Success:[/] Connected to Engram Bridge.")
         
         # Start background listener
         self.message_receiver()
@@ -1695,34 +1692,63 @@ class EngramTUI(App):
         else:
             task_connectors.update("None")
 
+    async def on_key(self, event) -> None:
+        """Global key intercept to absolutely guarantee the Enter key works."""
+        if event.key == "enter":
+            # If the command input has focus, manually force the submission
+            cmd_input = self.query_one("#command-input", Input)
+            if cmd_input.has_focus:
+                cmd = cmd_input.value.strip()
+                if cmd:
+                    cmd_input.value = ""
+                    log_view = self.query_one("#log-view", RichLog)
+                    log_view.write(f"[bold cyan]> {cmd}[/]")
+                    if cmd.startswith("/"):
+                        await self._handle_slash_command(cmd, log_view)
+                    else:
+                        self.run_worker(self._run_task_command(cmd), thread=False)
+                return
 
     @on(Input.Submitted, "#command-input")
-    async def handle_command(self, event: Input.Submitted) -> None:
-        """Handle command input."""
+    async def handle_input_submit(self, event: Input.Submitted) -> None:
+        """Hard override to capture the Enter key directly off the named widget."""
         cmd = event.value.strip()
         if not cmd:
             return
-
-        log_view = self.query_one("#log-view", RichLog)
-        # Clear the input immediately for better UX
-        self.query_one("#command-input", Input).value = ""
-        
-        # Immediate echo to log
-        log_view.write(f"[bold cyan]> {cmd}[/]")
-        
-        # Process command (simple router)
-        if cmd.startswith("/"):
-            await self._handle_slash_command(cmd, log_view)
-        else:
-            self.run_worker(self._run_task_command(cmd), thread=False)
             
-        # Re-focus the input so you can type the next command immediately
         try:
-            self.query_one("#command-input").focus()
-        except:
+            log_view = self.query_one("#log-view", RichLog)
+            self.query_one("#command-input", Input).value = ""
+            log_view.write(f"[bold cyan]> {cmd}[/]")
+            
+            if cmd.startswith("/"):
+                await self._handle_slash_command(cmd, log_view)
+            else:
+                self.run_worker(self._run_task_command(cmd), thread=False)
+                
+            try:
+                self.query_one("#command-input").focus()
+            except:
+                pass
+        except Exception as e:
+            self.log(f"Command Error: {e}")
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Fallback central event handler for all Input Submits."""
+        input_id = getattr(event.input, "id", None)
+        
+        # 1. Main Command Input (Fallback)
+        if input_id == "command-input":
+            # Already handled by @on above, but catching here just in case!
             pass
             
-        self.query_one("#command-input", Input).value = ""
+        # 2. Inline Login Inputs
+        elif input_id in ("inline-email", "inline-password", "inline-confirm", "inline-base-url"):
+            confirm = self.query_one("#inline-confirm", Input).value.strip()
+            if confirm:
+                await self._authenticate_inline(mode="signup")
+            else:
+                await self._authenticate_inline(mode="login")
 
     def action_clear(self) -> None:
         self.query_one("#log-view", RichLog).clear()
@@ -1734,15 +1760,22 @@ class EngramTUI(App):
         self.push_screen(WorkflowListScreen(self))
 
     def _set_auth_visible(self, visible: bool) -> None:
-        auth_container = self.query_one("#auth-container", Container)
-        main_shell = self.query_one("#main-shell", Container)
-        if visible:
-            auth_container.remove_class("hidden")
-            main_shell.add_class("hidden")
-            self.query_one("#inline-email", Input).focus()
-        else:
-            auth_container.add_class("hidden")
-            main_shell.remove_class("hidden")
+        """Force display updates to ensure login screens appear properly."""
+        try:
+            auth_container = self.query_one("#auth-container", Container)
+            main_shell = self.query_one("#main-shell", Container)
+            if visible:
+                auth_container.styles.display = "block"
+                main_shell.styles.display = "none"
+                try:
+                    self.query_one("#inline-email", Input).focus()
+                except:
+                    pass
+            else:
+                auth_container.styles.display = "none"
+                main_shell.styles.display = "block"
+        except Exception as e:
+            self.log(f"Failed to toggle auth visibility: {e}")
 
     def _set_inline_auth_error(self, message: str) -> None:
         label = self.query_one("#inline-auth-error", Label)
@@ -2232,5 +2265,5 @@ class EngramTUI(App):
             self._open_service_connect(provider_id)
 
 if __name__ == "__main__":
-    from textual import run
-    run(EngramTUI)
+    app = EngramTUI()
+    app.run()
