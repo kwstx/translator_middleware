@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     
     # Core Runtime (from ~/.engram/config.yaml)
     MODEL_PROVIDER: str = "openai"
-    BASE_URL: str = "http://localhost:8000"
+    BASE_URL: str = "http://127.0.0.1:8000"
     DEFAULT_PERSONALITY: str = "optimistic"
     
     # Postgres
