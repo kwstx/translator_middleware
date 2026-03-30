@@ -1,0 +1,2357 @@
+?diff --git a/tui/app.py b/tui/app.py
+index ad85727..ac54283 100644
+--- a/tui/app.py
++++ b/tui/app.py
+@@ -33,10 +33,6 @@ async def _infer_required_providers_via_backend(base_url: str, eat: str, command
+         # We use a dedicated analysis endpoint that doesn't trigger execution
+         headers = {"Authorization": f"Bearer {eat}"}
+         async with httpx.AsyncClient(timeout=10.0) as client:
+-            # We use the existing /tasks/submit endpoint's planner but with a 'dry_run' or similar param
+-            # Or if that's not available, use the/discovery endpoint to list potential agents.
+-            # For now, we perform a lightweight fetch from /credentials/providers to know what's possible
+-            # and let the backend's main orchestration loop catch missing creds if we skip the proactive check.
+             response = await client.get(f"{base_url}/credentials/providers", headers=headers)
+             if response.status_code != 200:
+                 return []
+@@ -104,7 +100,6 @@ def load_config() -> Dict[str, Any]:
+         try:
+             with open(CONFIG_FILE, "r") as f:
+                 saved = _normalize_config(_decrypt_config(f.read().strip()))
+-                # Restoration Migration: If the user was forced onto port 5001 (broken default), move them back to 8000
+                 if saved.get("base_url") == "http://127.0.0.1:5001/api/v1":
+                     saved["base_url"] = DEFAULT_BASE_URL
+                 config.update(saved)
+@@ -284,45 +279,30 @@ class AuthScreen(Screen):
+         save_config(config)
+         self.dismiss(config)
+ 
+-class ServiceConnectScreen(Screen):
++class BaseServiceConnectScreen(Screen):
+     BINDINGS = [
+         Binding("escape", "cancel", "Cancel"),
+     ]
++    BORDER_COLOR: Optional[str] = None
+ 
+-    def __init__(self, provider: Dict[str, Any]):
++    def __init__(self, provider: Dict[str, Any], custom_name: Optional[str] = None):
+         super().__init__()
+         self.provider = provider
+-
+-    def compose(self) -> ComposeResult:
+-        provider_name = self.provider.get("name", "Provider")
+-        display_name = self.provider.get("display_name") or provider_name
+-        auth_hint = self.provider.get("hint", "")
+-        auth_label = "API Key" if self.provider.get("auth") == "api_key" else "OAuth Token"
+-        with Container(id="service-connect-container"):
+-            yield Label(f"Connect {display_name}", id="service-connect-title")
+-            if self.provider.get("custom"):
+-                yield Label("Provider Name")
+-                yield Input(
+-                    value=self.provider.get("prefill_name", ""),
+-                    placeholder="e.g., notion, github, linear",
+-                    id="provider-name-input",
+-                    classes="thin-input",
+-                )
+-            else:
+-                yield Label("Provider")
+-                yield Label(display_name, id="provider-name-label")
+-            yield Label(f"{auth_label}")
+-            yield Input(password=True, placeholder=auth_hint or "Paste token", id="provider-token-input", classes="thin-input")
+-            yield Label("", id="service-connect-error")
+-            with Horizontal(id="service-connect-buttons"):
+-                yield Button("Connect", id="service-connect-btn", variant="primary")
+-                yield Button("Cancel", id="service-cancel-btn")
++        self.custom_name = custom_name
+ 
+     def on_mount(self) -> None:
++        if self.BORDER_COLOR:
++            try:
++                self.query_one("#service-connect-container", Container).styles.border = ("round", self.BORDER_COLOR)
++            except Exception:
++                pass
++
+         if self.provider.get("custom"):
+-            self.query_one("#provider-name-input", Input).focus()
++            try: self.query_one("#provider-name-input", Input).focus()
++            except: pass
+         else:
+-            self.query_one("#provider-token-input", Input).focus()
++            try: self.query_one("#provider-token-input", Input).focus()
++            except: pass
+ 
+     def action_cancel(self) -> None:
+         self.dismiss(None)
+@@ -337,7 +317,7 @@ class ServiceConnectScreen(Screen):
+ 
+     @on(Button.Pressed, "#service-connect-btn")
+     async def handle_connect(self) -> None:
+-        app = self.app
++        app_ref = self.app
+         provider_id = self.provider.get("id")
+         if self.provider.get("custom"):
+             provider_name = self.query_one("#provider-name-input", Input).value.strip().lower()
+@@ -364,13 +344,12 @@ class ServiceConnectScreen(Screen):
+             },
+         }
+ 
+-        response = await app._authed_request("POST", "/credentials", json_body=payload)
++        response = await app_ref._authed_request("POST", "/credentials", json_body=payload)
+         if response.status_code not in (200, 201):
+             self._set_error(_extract_error_detail(response))
+             return
+ 
+-        # NEW: Store in local vault
+-        VaultService.store_credential(app.base_url, app.user_email, provider_name, {
++        VaultService.store_credential(app_ref.base_url, app_ref.user_email, provider_name, {
+             "token": token,
+             "type": credential_type,
+             "metadata": payload["metadata"]
+@@ -378,6 +357,143 @@ class ServiceConnectScreen(Screen):
+ 
+         self.dismiss({"provider_name": provider_name})
+ 
++class OpenAIConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#2bdc8d"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #2bdc8d]Connect OpenAI[/]", id="service-connect-title")
++            yield Label("Unlock GPT-4o, o1, and o3-mini models.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://platform.openai.com/api-keys[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="sk-proj-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect OpenAI", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class AnthropicConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#FF9966"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #FF9966]Connect Anthropic[/]", id="service-connect-title")
++            yield Label("Unlock Claude 3.5 Sonnet and Claude 3 Opus.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://console.anthropic.com/settings/keys[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="sk-ant-api03-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect Anthropic", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class GoogleConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#4285F4"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #4285F4]Connect Google DeepMind[/]", id="service-connect-title")
++            yield Label("Unlock Gemini 1.5 Pro and 2.0 Flash models.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://aistudio.google.com/app/apikey[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="AIzaSy...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect Google", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class LlamaConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#0668E1"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #0668E1]Connect Meta LLaMA[/]", id="service-connect-title")
++            yield Label("Connect to your open-source LLaMA endpoints.", classes="form-label")
++            yield Label("\n[dim]Provide your endpoint or proxy key.[/]")
++            yield Label("\nAPI Key / Token")
++            yield Input(password=True, placeholder="llama-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect LLaMA", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class MistralConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#FF4E00"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #FF4E00]Connect Mistral AI[/]", id="service-connect-title")
++            yield Label("Unlock Mistral Large and Mixtral 8x22B.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://console.mistral.ai/api-keys/[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="Mistral API Key", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect Mistral", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class GrokConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#FFFFFF"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #FFFFFF]Connect xAI (Grok)[/]", id="service-connect-title")
++            yield Label("Unlock Grok-2 and Grok-1.5 models.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://console.x.ai/[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="xoxb-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect xAI", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class PerplexityConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#2bdc8d"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #2bdc8d]Connect Perplexity[/]", id="service-connect-title")
++            yield Label("Add deep research capabilities and web search.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://www.perplexity.ai/settings/api[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="pplx-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect Perplexity", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class DeepseekConnectScreen(BaseServiceConnectScreen):
++    BORDER_COLOR = "#2bdc8d"
++    def compose(self) -> ComposeResult:
++        with Container(id="service-connect-container"):
++            yield Label("[bold #2bdc8d]Connect DeepSeek[/]", id="service-connect-title")
++            yield Label("Unlock advanced Code Optimization with DeepSeek-Coder.", classes="form-label")
++            yield Label("\n[dim]Get your key at: https://platform.deepseek.com/api_keys[/]")
++            yield Label("\nAPI Key")
++            yield Input(password=True, placeholder="sk-...", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect DeepSeek", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
++class GenericServiceConnectScreen(BaseServiceConnectScreen):
++    def compose(self) -> ComposeResult:
++        provider_name = self.provider.get("name", "Provider")
++        display_name = self.custom_name or self.provider.get("display_name") or provider_name
++        auth_hint = self.provider.get("hint", "")
++        auth_label = "API Key" if self.provider.get("auth") == "api_key" else "OAuth Token"
++        with Container(id="service-connect-container"):
++            yield Label(f"[bold]Connect {display_name}[/]", id="service-connect-title")
++            if self.provider.get("custom"):
++                yield Label("Provider Name")
++                yield Input(
++                    value=self.custom_name or self.provider.get("prefill_name", ""),
++                    placeholder="e.g., notion, github, linear",
++                    id="provider-name-input",
++                    classes="thin-input",
++                )
++            else:
++                yield Label(f"Service: {display_name}")
++            yield Label(f"\n{auth_label}")
++            yield Input(password=True, placeholder=auth_hint or "Paste token here", id="provider-token-input", classes="thin-input")
++            yield Label("", id="service-connect-error")
++            with Horizontal(id="service-connect-buttons"):
++                yield Button("Connect", id="service-connect-btn", variant="primary")
++                yield Button("Cancel", id="service-cancel-btn")
++
+ class WorkflowListScreen(Screen):
+     BINDINGS = [
+         Binding("escape", "close", "Close"),
+@@ -443,440 +559,112 @@ class WorkflowListScreen(Screen):
+         self.selected_workflow_id = item.id.replace("workflow-", "")
+ 
+     def _get_selected_workflow(self) -> Optional[Dict[str, Any]]:
+-        if not self.selected_workflow_id:
+-            return None
+-        return self.workflow_map.get(self.selected_workflow_id)
++        return self.workflow_map.get(self.selected_workflow_id) if self.selected_workflow_id else None
+ 
+     @on(Button.Pressed, "#workflow-close-btn")
+-    def _handle_close(self) -> None:
+-        self.dismiss(None)
++    def _handle_close(self) -> None: self.dismiss(None)
+ 
+     @on(Button.Pressed, "#workflow-refresh-btn")
+-    def _handle_refresh(self) -> None:
+-        self.run_worker(self._load_workflows(), thread=False)
++    def _handle_refresh(self) -> None: self.run_worker(self._load_workflows(), thread=False)
+ 
+     @on(Button.Pressed, "#workflow-create-btn")
+-    def _handle_create(self) -> None:
+-        self.app.push_screen(WorkflowCreateScreen(self.app_ref), self._handle_child_result)
++    def _handle_create(self) -> None: self.app.push_screen(WorkflowCreateScreen(self.app_ref), self._handle_child_result)
+ 
+     @on(Button.Pressed, "#workflow-run-btn")
+     def _handle_run(self) -> None:
+-        workflow = self._get_selected_workflow()
+-        if not workflow:
+-            return
+-        self.run_worker(self._run_workflow(workflow), thread=False)
++        wf = self._get_selected_workflow()
++        if wf: self.run_worker(self._run_workflow(wf), thread=False)
+ 
+     @on(Button.Pressed, "#workflow-schedule-btn")
+     def _handle_schedule(self) -> None:
+-        workflow = self._get_selected_workflow()
+-        if not workflow:
+-            return
+-        self.app.push_screen(WorkflowScheduleScreen(self.app_ref, workflow), self._handle_child_result)
++        wf = self._get_selected_workflow()
++        if wf: self.app.push_screen(WorkflowScheduleScreen(self.app_ref, wf), self._handle_child_result)
+ 
+     @on(Button.Pressed, "#workflow-runs-btn")
+     def _handle_runs(self) -> None:
+-        workflow = self._get_selected_workflow()
+-        if not workflow:
+-            return
+-        self.app.push_screen(WorkflowRunsScreen(self.app_ref, workflow))
++        wf = self._get_selected_workflow()
++        if wf: self.app.push_screen(WorkflowRunsScreen(self.app_ref, wf))
+ 
+     def _handle_child_result(self, result: Optional[Dict[str, Any]]) -> None:
+-        if result and result.get("refresh"):
+-            self.run_worker(self._load_workflows(), thread=False)
++        if result and result.get("refresh"): self.run_worker(self._load_workflows(), thread=False)
+ 
+     async def _run_workflow(self, workflow: Dict[str, Any]) -> None:
+         log_view = self.app_ref.query_one("#log-view", RichLog)
+         wf_id = workflow.get("id")
+         command = workflow.get("command") or ""
+         if command:
+-            ok = await self.app_ref._ensure_required_providers_connected(command, log_view)
+-            if not ok:
+-                return
++            if not await self.app_ref._ensure_required_providers_connected(command, log_view): return
+         response = await self.app_ref._authed_request("POST", f"/workflows/{wf_id}/run")
+         if response.status_code != 200:
+             log_view.write(f"[bold red]Workflow run failed:[/] {_extract_error_detail(response)}")
+             return
+-        payload = response.json()
+-        log_view.write(f"[bold green]Workflow queued:[/] {wf_id} (Task {payload.get('task_id')})")
+-
+-
+-class WorkflowCreateScreen(Screen):
+-    BINDINGS = [
+-        Binding("escape", "cancel", "Cancel"),
+-    ]
+-
+-    def __init__(self, app_ref: "EngramTUI"):
+-        super().__init__()
+-        self.app_ref = app_ref
+-
+-    def compose(self) -> ComposeResult:
+-        with Container(id="workflow-create-container"):
+-            yield Label("Create Workflow", id="workflow-create-title")
+-            yield Label("Name")
+-            yield Input(placeholder="e.g., Daily Research Digest", id="workflow-name-input")
+-            yield Label("Description")
+-            yield Input(placeholder="Optional description", id="workflow-desc-input")
+-            yield Label("Command")
+-            yield Input(placeholder="e.g., Perplexity research ... then Slack post ...", id="workflow-command-input")
+-            yield Label("Metadata (JSON, optional)")
+-            yield Input(placeholder="{\"priority\": \"high\"}", id="workflow-metadata-input")
+-            yield Label("", id="workflow-create-error")
+-            with Horizontal(id="workflow-create-buttons"):
+-                yield Button("Create", id="workflow-create-btn", variant="primary")
+-                yield Button("Cancel", id="workflow-cancel-btn")
+-
+-    def on_mount(self) -> None:
+-        self.query_one("#workflow-name-input", Input).focus()
+-
+-    def action_cancel(self) -> None:
+-        self.dismiss(None)
+-
+-    def _set_error(self, message: str) -> None:
+-        label = self.query_one("#workflow-create-error", Label)
+-        label.update(message)
+-
+-    @on(Button.Pressed, "#workflow-cancel-btn")
+-    def _handle_cancel(self) -> None:
+-        self.dismiss(None)
+-
+-    @on(Button.Pressed, "#workflow-create-btn")
+-    async def _handle_create(self) -> None:
+-        name = self.query_one("#workflow-name-input", Input).value.strip()
+-        description = self.query_one("#workflow-desc-input", Input).value.strip()
+-        command = self.query_one("#workflow-command-input", Input).value.strip()
+-        metadata_raw = self.query_one("#workflow-metadata-input", Input).value.strip()
+-
+-        if not name or not command:
+-            self._set_error("Name and command are required.")
+-            return
+-
+-        metadata = None
+-        if metadata_raw:
+-            try:
+-                metadata = json.loads(metadata_raw)
+-            except Exception:
+-                self._set_error("Metadata must be valid JSON.")
+-                return
+-
+-        response = await self.app_ref._authed_request(
+-            "POST",
+-            "/workflows",
+-            json_body={
+-                "name": name,
+-                "description": description or None,
+-                "command": command,
+-                "metadata": metadata,
+-            },
+-        )
+-        if response.status_code not in (200, 201):
+-            self._set_error(_extract_error_detail(response))
+-            return
+-        self.dismiss({"refresh": True})
+-
+-
+-class WorkflowScheduleScreen(Screen):
+-    BINDINGS = [
+-        Binding("escape", "cancel", "Cancel"),
+-    ]
+-
+-    def __init__(self, app_ref: "EngramTUI", workflow: Dict[str, Any]):
+-        super().__init__()
+-        self.app_ref = app_ref
+-        self.workflow = workflow
+-
+-    def compose(self) -> ComposeResult:
+-        with Container(id="workflow-schedule-container"):
+-            yield Label("Schedule Workflow", id="workflow-schedule-title")
+-            yield Label("Interval Minutes")
+-            yield Input(placeholder="e.g., 60", id="workflow-interval-input")
+-            yield Label("Enabled (yes/no)")
+-            yield Input(value="yes", id="workflow-enabled-input")
+-            yield Label("", id="workflow-schedule-error")
+-            with Horizontal(id="workflow-schedule-buttons"):
+-                yield Button("Save", id="workflow-schedule-save-btn", variant="primary")
+-                yield Button("Remove", id="workflow-schedule-remove-btn")
+-                yield Button("Cancel", id="workflow-schedule-cancel-btn")
+-
+-    def on_mount(self) -> None:
+-        self.run_worker(self._load_schedule(), thread=False)
+-
+-    def action_cancel(self) -> None:
+-        self.dismiss(None)
+-
+-    def _set_error(self, message: str) -> None:
+-        label = self.query_one("#workflow-schedule-error", Label)
+-        label.update(message)
+-
+-    async def _load_schedule(self) -> None:
+-        wf_id = self.workflow.get("id")
+-        response = await self.app_ref._authed_request("GET", f"/workflows/{wf_id}/schedule")
+-        if response.status_code == 200:
+-            schedule = response.json()
+-            interval_minutes = int(schedule.get("interval_seconds", 0)) // 60
+-            self.query_one("#workflow-interval-input", Input).value = str(interval_minutes)
+-            enabled = "yes" if schedule.get("enabled") else "no"
+-            self.query_one("#workflow-enabled-input", Input).value = enabled
+-
+-    @on(Button.Pressed, "#workflow-schedule-cancel-btn")
+-    def _handle_cancel(self) -> None:
+-        self.dismiss(None)
+-
+-    @on(Button.Pressed, "#workflow-schedule-remove-btn")
+-    async def _handle_remove(self) -> None:
+-        wf_id = self.workflow.get("id")
+-        response = await self.app_ref._authed_request("DELETE", f"/workflows/{wf_id}/schedule")
+-        if response.status_code != 204:
+-            self._set_error(_extract_error_detail(response))
+-            return
+-        self.dismiss({"refresh": True})
+-
+-    @on(Button.Pressed, "#workflow-schedule-save-btn")
+-    async def _handle_save(self) -> None:
+-        wf_id = self.workflow.get("id")
+-        interval_raw = self.query_one("#workflow-interval-input", Input).value.strip()
+-        enabled_raw = self.query_one("#workflow-enabled-input", Input).value.strip().lower()
+-        if not interval_raw.isdigit():
+-            self._set_error("Interval must be a positive integer.")
+-            return
+-        interval_minutes = int(interval_raw)
+-        if interval_minutes <= 0:
+-            self._set_error("Interval must be greater than zero.")
+-            return
+-        enabled = enabled_raw in ("yes", "true", "1", "y")
+-        response = await self.app_ref._authed_request(
+-            "POST",
+-            f"/workflows/{wf_id}/schedule",
+-            json_body={"interval_minutes": interval_minutes, "enabled": enabled},
+-        )
+-        if response.status_code != 200:
+-            self._set_error(_extract_error_detail(response))
+-            return
+-        self.dismiss({"refresh": True})
+-
+-
+-class DebugScreen(Screen):
+-    BINDINGS = [
+-        Binding("escape", "close", "Close"),
+-        Binding("r", "refresh", "Refresh Task List"),
+-        Binding("t", "tail", "Tail Current Task"),
+-    ]
+-
+-    def __init__(self, app_ref: "EngramTUI"):
+-        super().__init__()
+-        self.app_ref = app_ref
+-        self.selected_task_id = None
+-        self.last_event_timestamp = 0
+-        self.tailing = False
++        log_view.write(f"[bold green]Workflow queued:[/] {wf_id} (Task {response.json().get('task_id')})")
+ 
++class ProviderSelectionScreen(Screen):
+     def compose(self) -> ComposeResult:
+-        with Container(id="debug-container"):
+-            yield Label("Developer Debug Console", id="debug-title")
+-            with Horizontal(id="debug-main-layout"):
+-                with Vertical(id="debug-list-panel"):
+-                    yield Label("Recent Tasks", classes="debug-subtitle")
+-                    yield DataTable(id="task-debug-table")
+-                    with Horizontal(classes="debug-actions"):
+-                        yield Button("Refresh", id="debug-refresh-btn")
+-                        yield Button("Inspect", id="debug-inspect-btn", variant="primary")
+-                
+-                with Vertical(id="debug-detail-panel"):
+-                    yield Label("Task details (Select a task)", id="debug-detail-header", classes="debug-subtitle")
+-                    with TabbedContent(id="debug-tabs"):
+-                        with TabPane("Execution Log", id="tab-log"):
+-                            yield RichLog(id="debug-event-log", highlight=True, markup=True)
+-                        with TabPane("Protocol Trace", id="tab-trace"):
+-                            with Horizontal():
+-                                with Vertical(classes="protocol-pane"):
+-                                    yield Label("Engram (Source)", classes="protocol-title")
+-                                    yield RichLog(id="debug-trace-source")
+-                                with Vertical(classes="protocol-pane"):
+-                                    yield Label("Tool (Target)", classes="protocol-title")
+-                                    yield RichLog(id="debug-trace-target")
+-                        with TabPane("Plan", id="tab-plan"):
+-                            yield RichLog(id="debug-task-plan")
+-            
+-            with Horizontal(id="debug-footer"):
+-                yield Button("Close", id="debug-close-btn")
+-                yield Label("Press [bold]R[/] to refresh list | [bold]T[/] to toggle live tail", id="debug-status-hint")
++        with Container(id="workflow-container"):
++            yield Label("[bold]Choose an AI Provider to Connect[/]", id="workflow-title")
++            yield ListView(id="provider-select-list")
++            with Horizontal(id="workflow-buttons"):
++                yield Button("Connect Selected", id="provider-select-btn", variant="primary")
++                yield Button("Cancel", id="provider-cancel-btn")
+ 
+     def on_mount(self) -> None:
+-        table = self.query_one("#task-debug-table", DataTable)
+-        table.add_columns("ID", "Command", "Status", "Updated")
+-        table.cursor_type = "row"
+-        self.run_worker(self._load_tasks(), thread=False)
+-
+-    def action_close(self) -> None:
+-        self.dismiss(None)
+-
+-    def action_refresh(self) -> None:
+-        self.run_worker(self._load_tasks(), thread=False)
+-
+-    @work(exclusive=True)
+-    async def _load_tasks(self) -> None:
+-        table = self.query_one("#task-debug-table", DataTable)
+-        table.clear()
+-        
+-        response = await self.app_ref._authed_request("GET", "/tasks?limit=25")
+-        if response.status_code != 200:
+-            return
+-            
+-        tasks = response.json()
+-        for t in tasks:
+-            tid = str(t.get("id"))
+-            cmd = t.get("source_message", {}).get("command", "N/A")
+-            if len(cmd) > 30: cmd = cmd[:27] + "..."
+-            status = t.get("status", "unknown")
+-            updated = t.get("updated_at", "")[:19].replace("T", " ")
+-            table.add_row(tid, cmd, status, updated, key=tid)
+-
+-    @on(DataTable.RowSelected, "#task-debug-table")
+-    def _row_selected(self, event: DataTable.RowSelected) -> None:
+-        self.selected_task_id = event.row_key.value
+-        self.run_worker(self._inspect_task(self.selected_task_id), thread=False)
+-
+-    @on(Button.Pressed, "#debug-refresh-btn")
+-    def _handle_refresh(self) -> None:
+-        self.action_refresh()
+-
+-    @on(Button.Pressed, "#debug-inspect-btn")
+-    def _handle_inspect(self) -> None:
+-        table = self.query_one("#task-debug-table", DataTable)
+-        if table.cursor_row is not None:
+-            row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+-            self.selected_task_id = row_key
+-            self.run_worker(self._inspect_task(self.selected_task_id), thread=False)
+-
+-    @on(Button.Pressed, "#debug-close-btn")
+-    def _handle_close(self) -> None:
+-        self.action_close()
+-
+-    async def _inspect_task(self, task_id: str) -> None:
+-        self.query_one("#debug-detail-header", Label).update(f"Inspecting Task: [bold cyan]{task_id}[/]")
++        list_view = self.query_one("#provider-select-list", ListView)
+         
+-        # Reset logs
+-        self.query_one("#debug-event-log", RichLog).clear()
+-        self.query_one("#debug-trace-source", RichLog).clear()
+-        self.query_one("#debug-trace-target", RichLog).clear()
+-        self.query_one("#debug-task-plan", RichLog).clear()
++        # Mapping to backend identifiers
++        list_view.append(ListItem(Label("[bold #2bdc8d]OpenAI Family[/]"), disabled=True))
++        list_view.append(ListItem(Label("  GPT-4o, o1, o3-mini (Family)"), id="sel-openai"))
+         
+-        # Load task details
+-        response = await self.app_ref._authed_request("GET", f"/tasks/{task_id}")
+-        if response.status_code == 200:
+-            task = response.json()
+-            plan = task.get("source_message", {}).get("plan")
+-            if plan:
+-                plan_log = self.query_one("#debug-task-plan", RichLog)
+-                plan_log.write(json.dumps(plan, indent=2))
++        list_view.append(ListItem(Label("[bold #FF9966]Anthropic[/]"), disabled=True))
++        list_view.append(ListItem(Label("  Claude 3.5 Sonnet / 3 Opus"), id="sel-anthropic"))
+         
+-        # Load events
+-        await self._load_events(task_id)
+-
+-    async def _load_events(self, task_id: str) -> None:
+-        log = self.query_one("#debug-event-log", RichLog)
+-        response = await self.app_ref._authed_request("GET", f"/tasks/{task_id}/events")
+-        if response.status_code == 200:
+-            events = response.json()
+-            for ev in events:
+-                self._render_event(ev)
+-                
+-    def _render_event(self, event: Dict[str, Any]) -> None:
+-        log = self.query_one("#debug-event-log", RichLog)
+-        etype = event.get("event_type", "INFO")
+-        msg = event.get("message", "")
+-        ts = event.get("created_at", "")[11:19]
+-        
+-        color = "white"
+-        if "error" in etype.lower(): color = "red"
+-        elif "translation" in etype.lower(): color = "magenta"
+-        elif "handoff" in etype.lower(): color = "cyan"
++        list_view.append(ListItem(Label("[bold #4285F4]Google DeepMind[/]"), disabled=True))
++        list_view.append(ListItem(Label("  Gemini 1.5 Pro / 2.0 Flash"), id="sel-google"))
+         
+-        log.write(f"[[dim]{ts}[/]] [[bold {color}]{etype.upper()}[/]] {msg}")
+-        
+-        # Also route to traces if it's a translation event
+-        data = event.get("data") or {}
+-        if "translation" in etype.lower() and "payload" in data:
+-            if "engram" in etype.lower():
+-                src_log = self.query_one("#debug-trace-source", RichLog)
+-                src_log.clear()
+-                src_log.write(json.dumps(data.get("payload"), indent=2))
+-            else:
+-                tgt_log = self.query_one("#debug-trace-target", RichLog)
+-                tgt_log.clear()
+-                tgt_log.write(json.dumps(data.get("payload"), indent=2))
+-
+-    def action_tail(self) -> None:
+-        if not self.selected_task_id:
+-            return
+-        self.tailing = not self.tailing
+-        hint = self.query_one("#debug-status-hint", Label)
+-        if self.tailing:
+-            hint.update("LIVE TAIL: [bold green]ACTIVE[/] | Press [bold]T[/] to stop")
+-            self.run_worker(self._tail_worker(), thread=False)
+-        else:
+-            hint.update("Press [bold]R[/] to refresh list | [bold]T[/] to toggle live tail")
+-
+-    async def _tail_worker(self) -> None:
+-        while self.tailing and self.selected_task_id:
+-            # Get only new events
+-            # We'd need accurate 'since' logic, for now we just refresh all
+-            await self._load_events(self.selected_task_id)
+-            await asyncio.sleep(2)
++        list_view.append(ListItem(Label("[bold #0668E1]Meta / LLaMA[/]"), disabled=True))
++        list_view.append(ListItem(Label("  LLaMA 3.1 & 3.2 (Self-Hosted/API)"), id="sel-llama"))
+ 
++        list_view.append(ListItem(Label("[bold #FF4E00]Mistral AI[/]"), disabled=True))
++        list_view.append(ListItem(Label("  Mistral Large / Mixtral 8x22B"), id="sel-mistral"))
+ 
+-class WorkflowRunsScreen(Screen):
+-    BINDINGS = [
+-        Binding("escape", "close", "Close"),
+-        Binding("r", "refresh", "Refresh"),
+-    ]
+-
+-    def __init__(self, app_ref: "EngramTUI", workflow: Dict[str, Any]):
+-        super().__init__()
+-        self.app_ref = app_ref
+-        self.workflow = workflow
+-
+-    def compose(self) -> ComposeResult:
+-        with Container(id="workflow-runs-container"):
+-            yield Label("Workflow Runs", id="workflow-runs-title")
+-            yield ListView(id="workflow-runs-list")
+-            with Horizontal(id="workflow-runs-buttons"):
+-                yield Button("Refresh", id="workflow-runs-refresh-btn")
+-                yield Button("Close", id="workflow-runs-close-btn")
+-
+-    def on_mount(self) -> None:
+-        self.run_worker(self._load_runs(), thread=False)
+-
+-    def action_close(self) -> None:
+-        self.dismiss(None)
++        list_view.append(ListItem(Label("[bold]xAI (Grok)[/]"), disabled=True))
++        list_view.append(ListItem(Label("  Grok-2 / Grok-1.5"), id="sel-grok"))
+ 
+-    def action_refresh(self) -> None:
+-        self.run_worker(self._load_runs(), thread=False)
++        list_view.append(ListItem(Label("[bold #2bdc8d]Specialized Models[/]"), disabled=True))
++        list_view.append(ListItem(Label("  Perplexity (Research/Search)"), id="sel-perplexity"))
++        list_view.append(ListItem(Label("  DeepSeek-Coder (Code Optimization)"), id="sel-deepseek"))
+ 
+-    async def _load_runs(self) -> None:
+-        list_view = self.query_one("#workflow-runs-list", ListView)
+-        list_view.clear()
+-        wf_id = self.workflow.get("id")
+-        response = await self.app_ref._authed_request("GET", f"/workflows/{wf_id}/tasks?limit=20")
+-        if response.status_code != 200:
+-            list_view.append(ListItem(Label(f"Error: {_extract_error_detail(response)}")))
+-            return
+-        rows = response.json()
+-        if not rows:
+-            list_view.append(ListItem(Label("No runs yet.")))
+-            return
+-        for row in rows:
+-            line = f"{row.get('id')} | {row.get('status')} | {row.get('updated_at')}"
+-            list_view.append(ListItem(Label(line)))
++        list_view.append(ListItem(Label("[bold #b8b2a8]--- SOFTWARE TOOLS ---[/]"), disabled=True))
++        for p in PROVIDERS:
++             if p.get("id") not in ["openai", "anthropic", "google", "llama", "mistral", "grok", "perplexity", "deepseek", "claude", "gemini"] and not p.get("custom"):
++                 list_view.append(ListItem(Label(f"  {p.get('name', p.get('id'))}"), id=f"sel-{p['id']}"))
+ 
+-    @on(Button.Pressed, "#workflow-runs-refresh-btn")
+-    def _handle_refresh(self) -> None:
+-        self.run_worker(self._load_runs(), thread=False)
++    @on(ListView.Selected, "#provider-select-list")
++    def on_select(self, event: ListView.Selected) -> None:
++        item = event.item
++        item_id = getattr(item, "id", None)
++        if item_id and isinstance(item_id, str) and item_id.startswith("sel-"):
++            self.dismiss(item_id.replace("sel-", ""))
++        else:
++            self.app.query_one("#log-view").write(f"[red]Error: Selected item has no valid id ([/red]{item_id}[red])[/red]")
++            # Do not dismiss if invalid, so we can see the error
++
++    @on(Button.Pressed, "#provider-select-btn")
++    def on_connect(self) -> None:
++        list_view = self.query_one("#provider-select-list", ListView)
++        # Getting the highlighted item safely
++        if list_view.highlighted_child:
++            item_id = getattr(list_view.highlighted_child, "id", None)
++            if item_id and isinstance(item_id, str) and item_id.startswith("sel-"):
++                self.dismiss(item_id.replace("sel-", ""))
++                return
++        self.app.query_one("#log-view").write("[red]Error: Selected button but no valid id found.[/red]")
+ 
+-    @on(Button.Pressed, "#workflow-runs-close-btn")
+-    def _handle_close(self) -> None:
+-        self.dismiss(None)
++    @on(Button.Pressed, "#provider-cancel-btn")
++    def on_cancel(self) -> None: self.dismiss(None)
+ 
+ class WelcomeScreen(Screen):
+-    """Initial splash screen on app boot."""
+     def compose(self) -> ComposeResult:
+         LOGO_BLOCKY = r"""
+   _____   _   _    ____   ____       _      __  __ 
+@@ -888,12 +676,23 @@ class WelcomeScreen(Screen):
+         with Container(id="welcome-container"):
+             yield Label("[#FF9966]* Welcome to [bold]Engram[/][/]", id="welcome-subtitle")
+             yield Static(f"[#FF9966]{LOGO_BLOCKY}[/]", id="welcome-logo")
+-            yield Label("Press [bold]Enter[/] to continue", id="welcome-continue")
++            yield Label("Currently Running in: [cyan]Mock Mode[/] (No API Keys Found)", id="welcome-status")
++            yield Label("Press [bold]Enter[/] to start or [bold]S[/] to setup agents", id="welcome-continue")
++            with Horizontal(id="welcome-buttons"):
++                yield Button("Start Bridging", id="welcome-start-btn", variant="primary")
++                yield Button("Setup API Keys", id="welcome-setup-btn")
++
++    @on(Button.Pressed, "#welcome-start-btn")
++    def on_start(self) -> None: self.app.pop_screen()
++
++    @on(Button.Pressed, "#welcome-setup-btn")
++    def on_setup(self) -> None:
++        self.app.pop_screen()
++        self.app.push_screen(ProviderSelectionScreen(), self.app._handle_provider_setup_result)
+ 
+     async def on_key(self, event) -> None:
+-        # Use simple key capture to prevent BINDINGS bug from locking the user out
+-        if event.key in ("enter", "escape"):
+-            self.app.pop_screen()
++        if event.key in ("enter", "escape"): self.app.pop_screen()
++        elif event.key == "s": self.on_setup()
+ 
+ # ASCII header
+ LOGO = r"""[#2bdc8d]
+@@ -907,430 +706,101 @@ LOGO = r"""[#2bdc8d]
+ """
+ 
+ class EngramTUI(App):
+-    """
+-    A terminal-based interface for the Engram Protocol Bridge.
+-    """
+-
+     CSS = """
+-    Screen {
+-        background: #0f0f0f;
+-        color: #e6e1d7;
+-    }
+-
+-    WelcomeScreen {
+-        align: center middle;
+-        background: #0f0f0f;
+-    }
+-
+-    #welcome-container {
+-        width: auto;
+-        height: auto;
+-        padding: 2 4;
+-    }
+-
+-    #welcome-subtitle {
+-        border: round #FF9966;
+-        padding: 0 2;
+-        margin-bottom: 2;
+-        width: auto;
+-    }
+-
+-    #welcome-logo {
+-        color: #FF9966;
+-        text-align: left;
+-        width: auto;
+-        margin-bottom: 4;
+-    }
++    Screen { background: #0f0f0f; color: #e6e1d7; }
++    WelcomeScreen { align: center middle; background: #0f0f0f; }
++    #welcome-container { width: auto; height: auto; padding: 2 4; }
++    #welcome-subtitle { border: round #FF9966; padding: 0 2; margin-bottom: 2; width: auto; }
++    #welcome-logo { color: #FF9966; text-align: left; width: auto; margin-bottom: 4; }
++    #welcome-status { text-align: left; color: #2bdc8d; margin-bottom: 1; }
++    #welcome-continue { text-align: left; color: #b8b2a8; margin-bottom: 2; }
++    #welcome-buttons { height: 3; width: auto; }
++    #welcome-buttons Button { margin-right: 2; }
++    #header { height: 8; content-align: left top; background: #0f0f0f; border: none; margin: 1 2 0 2; padding: 0 2; }
++    #main-container { height: 1fr; margin: 0 2 1 2; }
++    #main-left { width: 70%; padding-right: 1; }
++    #trace-panels { height: 13; background: #121212; border: round #1f2d28; padding: 1; margin-bottom: 1; }
++    .trace-row { height: 1fr; }
++    .trace-panel { width: 1fr; border: round #1f2d28; margin-right: 1; padding: 0 1; background: #101010; }
++    #translation-panel { height: 10; background: #121212; border: round #1f2d28; padding: 1; margin-bottom: 1; }
++    .translation-panel { width: 1fr; border: round #1f2d28; margin-right: 1; padding: 0 1; background: #101010; }
++    .translation-title { text-style: bold; color: #2bdc8d; margin-bottom: 0; }
++    .trace-title { text-style: bold; color: #2bdc8d; margin-bottom: 0; }
++    #log-view { height: 1fr; background: #121212; border: round #1f2d28; padding: 1; }
++    #sidebar { width: 30%; background: #121212; border: round #1f2d28; padding: 1; }
++    .sidebar-title { text-style: bold; color: #2bdc8d; margin-bottom: 1; }
++    .stat-item { margin-bottom: 1; color: #d7d2c7; }
++    #task-panel { border: round #1f2d28; padding: 1; margin-bottom: 1; background: #121212; }
++    #task-current, #task-progress, #task-connectors { color: #e6e1d7; }
++    #input-area { height: 3; background: #101010; border-top: heavy #2bdc8d; padding: 0 2; margin: 0 2 1 2; }
++    Input { background: #101010; border: solid #1f2d28; color: #e6e1d7; }
++    Input:focus { border: solid #2bdc8d; }
++    Button { background: #101010; color: #e6e1d7; border: solid #1f2d28; }
++    Button:focus, Button.-hover { background: #132019; border: solid #2bdc8d; color: #f3e6d4; }
++    .status-ok { color: #2bdc8d; }
++    .status-waiting { color: #e0b15b; }
++    #auth-container { width: 72%; height: auto; padding: 1 2; border: round #1f2d28; background: #101010; margin: 1 4; }
++    #auth-title { content-align: left middle; text-style: bold; color: #2bdc8d; margin-bottom: 1; width: auto; }
++    .form-label { color: #e6e1d7; }
++    .thin-input { background: #0f0f0f; border: solid #1f2d28; height: 3; }
++    .thin-input:focus { border: solid #2bdc8d; }
++    #auth-buttons { margin-top: 1; height: auto; }
++    #auth-buttons Button { width: 1fr; }
++    #auth-error { color: #e74c3c; margin-top: 1; }
++    #service-connect-container { width: 70%; height: auto; padding: 1 2; border: round #1f2d28; background: #101010; margin: 1 4; }
++    #service-connect-title { content-align: left middle; text-style: bold; color: #2bdc8d; margin-bottom: 1; width: auto; }
++    #service-connect-buttons { margin-top: 1; height: auto; }
++    #service-connect-error { color: #e74c3c; margin-top: 1; }
++    #workflow-container, #workflow-create-container, #workflow-schedule-container, #workflow-runs-container { width: 80%; height: auto; padding: 1 2; border: round #1f2d28; background: #101010; margin: 1 4; }
++    #workflow-title, #workflow-create-title, #workflow-schedule-title, #workflow-runs-title { content-align: left middle; text-style: bold; color: #2bdc8d; margin-bottom: 1; width: auto; }
++    #workflow-create-error, #workflow-schedule-error { color: #e74c3c; margin-top: 1; }
++    #services-panel { margin-top: 1; border-top: solid #1f2d28; padding-top: 1; }
++    .service-row { height: auto; margin-bottom: 1; }
++    .service-name { width: 45%; }
++    .service-status { width: 30%; }
++    .service-btn { width: 25%; }
++    #debug-container { width: 95%; height: 95%; border: heavy #2bdc8d; background: #0f0f0f; margin: 1 2; padding: 1; }
++    #debug-title { content-align: center middle; text-style: bold; color: #2bdc8d; margin-bottom: 1; background: #101010; height: 3; }
++    .debug-subtitle { text-style: bold underline; color: #2bdc8d; margin-bottom: 1; }
++    #debug-main-layout { height: 1fr; }
++    #debug-list-panel { width: 35%; border-right: solid #1f2d28; padding: 0 1; }
++    #debug-detail-panel { width: 65%; padding: 0 1; }
++    .debug-actions { height: 3; margin-top: 1; }
++    #debug-tabs { height: 1fr; }
++    .protocol-pane { width: 1fr; border: round #1f2d28; margin: 0 1; background: #121212; }
++    .protocol-title { text-style: bold; color: #2bdc8d; content-align: center middle; background: #101010; }
++    #debug-event-log, #debug-trace-source, #debug-trace-target, #debug-task-plan { height: 1fr; background: #0f0f0f; }
++    #debug-footer { height: 3; background: #101010; border-top: solid #2bdc8d; padding: 0 2; align: center middle; }
++    #debug-status-hint { margin-left: 2; color: #b8b2a8; }
++    .hidden { display: none; }
++    """
+ 
+-    #welcome-continue {
+-        text-align: left;
+-        color: #b8b2a8;
+-    }
++    BINDINGS = [
++        Binding("q", "quit", "Quit", show=True),
++        Binding("c", "clear", "Clear Logs", show=True),
++        Binding("r", "refresh", "Refresh Stats", show=True),
++        Binding("s", "services", "Services", show=True),
++        Binding("w", "workflows", "Workflows", show=True),
++    ]
+ 
+-    #header {
+-        height: 8;
+-        content-align: left top;
+-        background: #0f0f0f;
+-        border: none;
+-        margin: 1 2 0 2;
+-        padding: 0 2;
+-    }
+-
+-    #main-container {
+-        height: 1fr;
+-        margin: 0 2 1 2;
+-    }
+-
+-    #main-left {
+-        width: 70%;
+-        padding-right: 1;
+-    }
+-
+-    #trace-panels {
+-        height: 13;
+-        background: #121212;
+-        border: round #1f2d28;
+-        padding: 1;
+-        margin-bottom: 1;
+-    }
+-
+-    .trace-row {
+-        height: 1fr;
+-    }
+-
+-    .trace-panel {
+-        width: 1fr;
+-        border: round #1f2d28;
+-        margin-right: 1;
+-        padding: 0 1;
+-        background: #101010;
+-    }
+-
+-    #translation-panel {
+-        height: 10;
+-        background: #121212;
+-        border: round #1f2d28;
+-        padding: 1;
+-        margin-bottom: 1;
+-    }
+-
+-    .translation-panel {
+-        width: 1fr;
+-        border: round #1f2d28;
+-        margin-right: 1;
+-        padding: 0 1;
+-        background: #101010;
+-    }
+-
+-    .translation-title {
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 0;
+-    }
+-
+-
+-    .trace-title {
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 0;
+-    }
+-
+-    #log-view {
+-        height: 1fr;
+-        background: #121212;
+-        border: round #1f2d28;
+-        padding: 1;
+-    }
+-
+-    #sidebar {
+-        width: 30%;
+-        background: #121212;
+-        border: round #1f2d28;
+-        padding: 1;
+-    }
+-
+-    .sidebar-title {
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-    }
+-
+-    .stat-item {
+-        margin-bottom: 1;
+-        color: #d7d2c7;
+-    }
+-
+-    #task-panel {
+-        border: round #1f2d28;
+-        padding: 1;
+-        margin-bottom: 1;
+-        background: #121212;
+-    }
+-
+-    #task-current, #task-progress, #task-connectors {
+-        color: #e6e1d7;
+-    }
+-
+-    #input-area {
+-        height: 3;
+-        background: #101010;
+-        border-top: heavy #2bdc8d;
+-        padding: 0 2;
+-        margin: 0 2 1 2;
+-    }
+-
+-    Input {
+-        background: #101010;
+-        border: solid #1f2d28;
+-        color: #e6e1d7;
+-    }
+-
+-    Input:focus {
+-        border: solid #2bdc8d;
+-    }
+-
+-    Button {
+-        background: #101010;
+-        color: #e6e1d7;
+-        border: solid #1f2d28;
+-    }
+-
+-    Button:focus, Button.-hover {
+-        background: #132019;
+-        border: solid #2bdc8d;
+-        color: #f3e6d4;
+-    }
+-    
+-    .status-ok {
+-        color: #2bdc8d;
+-    }
+-    
+-    .status-waiting {
+-        color: #e0b15b;
+-    }
+-
+-    #auth-container {
+-        width: 72%;
+-        height: auto;
+-        padding: 1 2;
+-        border: round #1f2d28;
+-        background: #101010;
+-        margin: 1 4;
+-    }
+-
+-    #auth-title {
+-        content-align: left middle;
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-        width: auto;
+-    }
+-
+-    .form-label {
+-        color: #e6e1d7;
+-    }
+-
+-    .thin-input {
+-        background: #0f0f0f;
+-        border: solid #1f2d28;
+-        height: 3;
+-    }
+-
+-    .thin-input:focus {
+-        border: solid #2bdc8d;
+-    }
+-
+-    #auth-buttons {
+-        margin-top: 1;
+-        height: auto;
+-    }
+-
+-    #auth-buttons Button {
+-        width: 1fr;
+-    }
+-
+-    #auth-error {
+-        color: #e74c3c;
+-        margin-top: 1;
+-    }
+-
+-    #inline-auth-error {
+-        color: #e74c3c;
+-        margin-top: 1;
+-    }
+-
+-    #service-connect-container {
+-        width: 70%;
+-        height: auto;
+-        padding: 1 2;
+-        border: round #1f2d28;
+-        background: #101010;
+-        margin: 1 4;
+-    }
+-
+-    #service-connect-title {
+-        content-align: left middle;
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-        width: auto;
+-    }
+-
+-    #service-connect-buttons {
+-        margin-top: 1;
+-        height: auto;
+-    }
+-
+-    #service-connect-error {
+-        color: #e74c3c;
+-        margin-top: 1;
+-    }
+-
+-    #workflow-container, #workflow-create-container, #workflow-schedule-container, #workflow-runs-container {
+-        width: 80%;
+-        height: auto;
+-        padding: 1 2;
+-        border: round #1f2d28;
+-        background: #101010;
+-        margin: 1 4;
+-    }
+-
+-    #workflow-title, #workflow-create-title, #workflow-schedule-title, #workflow-runs-title {
+-        content-align: left middle;
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-        width: auto;
+-    }
+-
+-    #workflow-buttons, #workflow-create-buttons, #workflow-schedule-buttons, #workflow-runs-buttons {
+-        margin-top: 1;
+-        height: auto;
+-    }
+-
+-    #workflow-create-error, #workflow-schedule-error {
+-        color: #e74c3c;
+-        margin-top: 1;
+-    }
+-
+-    #services-panel {
+-        margin-top: 1;
+-        border-top: solid #1f2d28;
+-        padding-top: 1;
+-    }
+-
+-    .service-row {
+-        height: auto;
+-        margin-bottom: 1;
+-    }
+-
+-    .service-name {
+-        width: 45%;
+-    }
+-
+-    .service-status {
+-        width: 30%;
+-    }
+-
+-    .service-btn {
+-        width: 25%;
+-    }
+-
+-    #debug-container {
+-        width: 95%;
+-        height: 95%;
+-        border: heavy #2bdc8d;
+-        background: #0f0f0f;
+-        margin: 1 2;
+-        padding: 1;
+-    }
+-
+-    #debug-title {
+-        content-align: center middle;
+-        text-style: bold;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-        background: #101010;
+-        height: 3;
+-    }
+-
+-    .debug-subtitle {
+-        text-style: bold underline;
+-        color: #2bdc8d;
+-        margin-bottom: 1;
+-    }
+-
+-    #debug-main-layout {
+-        height: 1fr;
+-    }
+-
+-    #debug-list-panel {
+-        width: 35%;
+-        border-right: solid #1f2d28;
+-        padding: 0 1;
+-    }
+-
+-    #debug-detail-panel {
+-        width: 65%;
+-        padding: 0 1;
+-    }
+-
+-    .debug-actions {
+-        height: 3;
+-        margin-top: 1;
+-    }
+-
+-    #debug-tabs {
+-        height: 1fr;
+-    }
+-
+-    .protocol-pane {
+-        width: 1fr;
+-        border: round #1f2d28;
+-        margin: 0 1;
+-        background: #121212;
+-    }
+-
+-    .protocol-title {
+-        text-style: bold;
+-        color: #2bdc8d;
+-        content-align: center middle;
+-        background: #101010;
+-    }
+-
+-    #debug-event-log, #debug-trace-source, #debug-trace-target, #debug-task-plan {
+-        height: 1fr;
+-        background: #0f0f0f;
+-    }
+-
+-    #debug-footer {
+-        height: 3;
+-        background: #101010;
+-        border-top: solid #2bdc8d;
+-        padding: 0 2;
+-        align: center middle;
+-    }
+-
+-    #debug-status-hint {
+-        margin-left: 2;
+-        color: #b8b2a8;
+-    }
+-
+-    .hidden {
+-        display: none;
+-    }
+-    """
+-
+-    BINDINGS = [
+-        Binding("q", "quit", "Quit", show=True),
+-        Binding("c", "clear", "Clear Logs", show=True),
+-        Binding("r", "refresh", "Refresh Stats", show=True),
+-        Binding("s", "services", "Services", show=True),
+-        Binding("w", "workflows", "Workflows", show=True),
+-    ]
+-
+-    def __init__(self, base_url: Optional[str] = None):
+-        super().__init__()
+-        self.cli_base_url = base_url
+-        self.initial_screen = None
+-        self.token: Optional[str] = None
+-        self.eat: Optional[str] = None
+-        self.base_url: str = DEFAULT_BASE_URL
+-        self.user_email: Optional[str] = None
+-        self.connected_providers = set()
+-        self.active_task_id: Optional[str] = None
+-        self.active_task_text: Optional[str] = None
+-        self.active_task_status: Optional[str] = None
+-        self.active_task_steps: Dict[int, Dict[str, Any]] = {}
+-        self.active_task_agents = set()
+-        self.active_task_total_steps: Optional[int] = None
+-        self._auth_future: Optional[asyncio.Future] = None
++    def __init__(self, base_url: Optional[str] = None):
++        super().__init__()
++        self.cli_base_url = base_url
++        self.initial_screen = None
++        self.token: Optional[str] = None
++        self.eat: Optional[str] = None
++        self.base_url: str = DEFAULT_BASE_URL
++        self.user_email: Optional[str] = None
++        self.connected_providers = set()
++        self.active_task_id: Optional[str] = None
++        self.active_task_text: Optional[str] = None
++        self.active_task_status: Optional[str] = None
++        self.active_task_steps: Dict[int, Dict[str, Any]] = {}
++        self.active_task_agents = set()
++        self.active_task_total_steps: Optional[int] = None
+ 
+     def compose(self) -> ComposeResult:
+-        # Header with Logo
+         yield Static(LOGO, id="header")
+-
+-        # Inline Auth (same terminal window)
+         with Container(id="auth-container"):
+             yield Label("Engram Sign In", id="auth-title")
+             yield Label("Base URL", classes="form-label")
+@@ -1347,7 +817,6 @@ class EngramTUI(App):
+                 yield Button("Signup", id="inline-signup-btn")
+                 yield Button("Quit", id="inline-quit-btn")
+ 
+-        # Main Layout
+         with Container(id="main-shell"):
+             with Horizontal(id="main-container"):
+                 with Vertical(id="main-left"):
+@@ -1378,17 +847,13 @@ class EngramTUI(App):
+                             with Vertical(classes="translation-panel"):
+                                 yield Label("TOOL RESPONSE", classes="translation-title")
+                                 yield RichLog(id="translation-response", highlight=True, markup=True)
+-
+-                    # Translation Log
+                     yield RichLog(id="log-view", highlight=True, markup=True)
+                 
+-                # Sidebar info
+                 with Vertical(id="sidebar"):
+                     yield Label("SYSTEM STATUS", classes="sidebar-title")
+                     yield Label("[bold]FastAPI Engine:[/] [green]Online[/]", classes="stat-item")
+                     yield Label("[bold]Discovery Service:[/] [green]Active[/]", classes="stat-item")
+                     yield Label("[bold]Task Worker:[/] [green]Processing[/]", classes="stat-item")
+-
+                     with Container(id="task-panel"):
+                         yield Label("TASK TRACKER", classes="sidebar-title")
+                         yield Label("CURRENT TASK", classes="sidebar-title")
+@@ -1397,873 +862,230 @@ class EngramTUI(App):
+                         yield Static("Status: IDLE", id="task-progress")
+                         yield Label("ACTIVE CONNECTORS", classes="sidebar-title")
+                         yield Static("None", id="task-connectors")
+-                    yield Label("\nRECENT ACTIVITY", classes="sidebar-title")
+-                    yield Label("- A2A Protocol registered", classes="stat-item")
+-                    yield Label("- MCP Mapping loaded", classes="stat-item")
+-                    yield Label("- Bridge listener started", classes="stat-item")
+-                    yield Label("\nCOMMANDS", classes="sidebar-title")
+-                    yield Label("/status - Check bridge health", classes="stat-item")
+-                    yield Label("/agents - List connected agents", classes="stat-item")
+-                    yield Label("/login  - Sign in", classes="stat-item")
+-                    yield Label("/logout - Sign out", classes="stat-item")
+-                    yield Label("/services - Refresh services", classes="stat-item")
+-                    yield Label("/connect <provider> - Connect service", classes="stat-item")
+-                    yield Label("/tasks [limit] - View recent tasks", classes="stat-item")
+-                    yield Label("/debug - Open developer console", classes="stat-item")
+-
+-                    with Container(id="services-panel"):
+-                        yield Label("CONNECTED SERVICES", classes="sidebar-title")
+-                        # Services will be dynamically populated in on_mount
+-
+-            # Input Area (Command prompt)
+-            yield Input(placeholder="Type a task or /command (e.g., 'Prepare a report from Slack then send to Notion')", id="command-input")
+-            
+-            # Footer
++                    yield Label("\nRECENT ACTIVITY", classes="sidebar-title"); yield Label("- Bridge active", classes="stat-item")
++                    with Container(id="services-panel"): yield Label("CONNECTED SERVICES", classes="sidebar-title")
++            yield Input(placeholder="Type a task or /command", id="command-input")
+             yield Footer()
+ 
+     async def on_mount(self) -> None:
+-        """Start listening for bridge events when the UI is ready."""
+         from app.core.tui_bridge import register_tui_loop
+         register_tui_loop(asyncio.get_event_loop())
+-
+         config = load_config()
+         self.base_url = self.cli_base_url or config.get("base_url") or DEFAULT_BASE_URL
+-        self.token = config.get("token")
+-        self.eat = config.get("eat")
+-        self.user_email = config.get("email")
+-        # Give the command input focus by default if we are logged in
++        self.token, self.eat, self.user_email = config.get("token"), config.get("eat"), config.get("email")
++        
+         log_view = self.query_one("#log-view", RichLog)
+         if self.eat:
+             self._set_auth_visible(False)
+-            try:
+-                # Perform a quick heartbeat check to port 8000
+-                log_view.write("[dim]System:[/] Checking connectivity to backend [bold]"+self.base_url+"[/]...")
+-                self.query_one("#command-input").focus()
+-            except Exception:
+-                pass
++            log_view.write(f"[dim]System:[/] Checking connectivity to [bold]{self.base_url}[/]...")
++            self.query_one("#command-input").focus()
+         else:
+             self._set_auth_visible(True)
+ 
+         log_view.write("[dim]System:[/] [green]Success:[/] Connected to Engram Bridge.")
+-        
+-        # Start background listener
++        from app.core.config import settings
++        if not settings.ANTHROPIC_API_KEY or settings.ANTHROPIC_API_KEY == "placeholder":
++            log_view.write("[bold yellow]Warning:[/] Mock Mode active. Press 'S' to setup real agents.")
++            
+         self.message_receiver()
+-        
+-        # Initial discovery
+         self.run_worker(self.refresh_available_providers(), thread=False)
+-        
+-        # NEW: Handle initial screen (e.g. from 'engram debug')
+-        if self.initial_screen == "debug":
+-            self.push_screen(DebugScreen(self))
+-        else:
+-            self.push_screen(WelcomeScreen())
++        if self.initial_screen == "debug": self.push_screen(DebugScreen(self))
++        else: self.push_screen(WelcomeScreen())
++
++    def _handle_provider_setup_result(self, provider_id: Optional[str]) -> None:
++        if provider_id: self._open_service_connect(provider_id)
+ 
+     @work(exclusive=True, thread=True)
+     def message_receiver(self):
+-        """Worker task to pull messages from the bridge queue and post them to UI."""
+         import asyncio
+-        import time
+-        
+-        # We need a new loop here or access the main one since textual works on its own loop.
+-        # However, textual's @work allows us to run async or sync.
+-        # The tui_event_queue is an asyncio.Queue from the app's main thread (probably).
+-        
+-        # Since I used call_soon_threadsafe in the logger, it should be fine.
+-        # But wait, tui_event_queue.get() is an async call.
+-        
+         async def run_listener():
+             while True:
+                 msg = await tui_event_queue.get()
+                 self.call_from_thread(self.log_message, msg)
+                 tui_event_queue.task_done()
+-        
+-        # Ensure there's an event loop for this thread if needed, or just use the app's loop
+         self.run_worker(run_listener())
+ 
+     def log_message(self, message: Any) -> None:
+-        """Update the log view with a new message."""
+         log_view = self.query_one("#log-view", RichLog)
+-        # Add timestamp
+         from datetime import datetime
+         now = datetime.now().strftime("%H:%M:%S")
+-
+         display = message
+         if isinstance(message, dict):
+             display = message.get("message") or message.get("type") or str(message)
+-            self._route_trace_event(message)
+-            self._route_translation_event(message)
++            self._route_trace_event(message); self._route_translation_event(message)
+         log_view.write(f"[dim]{now}[/] {display}")
+-        
+-        # PROMPT: Reaction to orchestration auth errors
+         if isinstance(message, dict) and message.get("type") == "agent.step.auth_error":
+-            # Extract provider from message if possible
+-            data = message.get("data", {})
+-            provider_id = data.get("agent", "").lower()
+-            if provider_id:
+-                # We show a focused connect prompt
+-                self.call_from_thread(self._handle_async_auth_error, provider_id)
+-
+-        if isinstance(display, str):
+-            self._handle_task_event(display)
++            p_id = message.get("data", {}).get("agent", "").lower()
++            if p_id: self.call_from_thread(self._handle_async_auth_error, p_id)
++        if isinstance(display, str): self._handle_task_event(display)
+ 
+     def _write_trace(self, selector: str, message: str) -> None:
+-        try:
+-            panel = self.query_one(selector, RichLog)
+-            panel.write(message)
+-        except Exception:
+-            pass
++        try: self.query_one(selector, RichLog).write(message)
++        except: pass
+ 
+     def _format_translation_payload(self, payload: Any) -> str:
+-        try:
+-            formatted = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True)
+-        except Exception:
+-            formatted = str(payload)
+-        return self._truncate_translation_payload(formatted)
+-
+-    def _truncate_translation_payload(self, text: str, max_chars: int = 3000) -> str:
+-        if len(text) <= max_chars:
+-            return text
+-        return f"{text[:max_chars]}\n...[truncated]"
+-
+-    def _set_translation_panel(self, selector: str, header: str, payload: Any) -> None:
+-        try:
+-            panel = self.query_one(selector, RichLog)
+-            panel.clear()
+-            panel.write(header)
+-            panel.write(self._format_translation_payload(payload))
+-        except Exception:
+-            pass
++        try: return json.dumps(payload, indent=2, sort_keys=True)
++        except: return str(payload)
+ 
+     def _route_translation_event(self, event: Dict[str, Any]) -> None:
+-        event_type = event.get("type", "")
+-        if not event_type.startswith("translation."):
+-            return
+-
+-        data = event.get("data") or {}
+-        payload = data.get("payload")
+-        connector = data.get("connector", "Unknown")
+-        step = data.get("step")
+-        step_label = f" step {step}" if step else ""
+-        header = f"[bold]{connector}[/]{step_label}"
+-
+-        if event_type == "translation.engram":
+-            self._set_translation_panel("#translation-engram", header, payload)
+-        elif event_type == "translation.request":
+-            self._set_translation_panel("#translation-request", header, payload)
+-        elif event_type == "translation.response":
+-            self._set_translation_panel("#translation-response", header, payload)
+-        else:
+-            self._set_translation_panel("#translation-request", header, payload)
++        etype = event.get("type", "")
++        if not etype.startswith("translation."): return
++        data = event.get("data") or {}; payload = data.get("payload"); connector = data.get("connector", "Unknown")
++        hdr = f"[bold]{connector}[/] step {data.get('step') or ''}"
++        if etype == "translation.engram": self.query_one("#translation-engram", RichLog).write(hdr + "\n" + self._format_translation_payload(payload))
++        elif etype == "translation.request": self.query_one("#translation-request", RichLog).write(hdr + "\n" + self._format_translation_payload(payload))
++        elif etype == "translation.response": self.query_one("#translation-response", RichLog).write(hdr + "\n" + self._format_translation_payload(payload))
+ 
+     def _route_trace_event(self, event: Dict[str, Any]) -> None:
+-        event_type = event.get("type", "")
+-        message = event.get("message") or event_type
+-        if event_type.startswith("translation."):
+-            return
+-
+-        if event_type.startswith("connection"):
+-            self._write_trace("#trace-connections", message)
+-            return
+-        if event_type.startswith("agent"):
+-            self._write_trace("#trace-agents", message)
+-            return
+-        if event_type.startswith("tool"):
+-            self._write_trace("#trace-tools", message)
+-            return
+-        if event_type.startswith("response"):
+-            self._write_trace("#trace-responses", message)
+-            return
+-
+-        # Fallback: try to route by keywords
+-        msg_lower = str(message).lower()
+-        if "handing off" in msg_lower or "orchestration plan" in msg_lower:
+-            self._write_trace("#trace-agents", message)
+-        elif "response" in msg_lower:
+-            self._write_trace("#trace-responses", message)
+-        elif "connect" in msg_lower or "connector" in msg_lower:
+-            self._write_trace("#trace-connections", message)
+-        else:
+-            self._write_trace("#trace-tools", message)
++        etype = event.get("type", ""); msg = event.get("message") or etype
++        if etype.startswith("translation."): return
++        if etype.startswith("connection"): self._write_trace("#trace-connections", msg)
++        elif etype.startswith("agent"): self._write_trace("#trace-agents", msg)
++        elif etype.startswith("tool"): self._write_trace("#trace-tools", msg)
++        elif etype.startswith("response"): self._write_trace("#trace-responses", msg)
+ 
+     def _handle_task_event(self, message: str) -> None:
+-        """Parse orchestration events and update the task tracker panel."""
+         import re
+-
+-        if "Orchestration Plan" in message and "Split into" in message:
+-            match = re.search(r"Split into (\d+) agent steps", message)
+-            if match:
+-                self._set_task_total_steps(int(match.group(1)))
+-                self._set_task_status("PLANNED")
+-            return
+-
+-        if "Step" in message and "Handing off to" in message:
+-            match = re.search(r"Step (\d+) \(Att (\d+)\):.*Handing off to \[bold\](.+?)\[/\]", message)
+-            if match:
+-                step_index = int(match.group(1))
+-                agent_name = match.group(3)
+-                self._update_step(step_index, agent_name, "RUNNING")
+-                self._set_task_status("RUNNING")
+-            return
+-
+-        if "Step" in message and "OK" in message:
+-            match = re.search(r"Step (\d+) OK:.*\[bold\](.+?)\[/\]", message)
+-            if match:
+-                step_index = int(match.group(1))
+-                agent_name = match.group(2)
+-                self._update_step(step_index, agent_name, "COMPLETED")
+-            return
+-
+-        if "failed after retries" in message:
+-            match = re.search(r"Step (\d+) failed after retries:.*", message)
+-            if match:
+-                step_index = int(match.group(1))
+-                self._update_step(step_index, None, "FAILED")
+-                self._set_task_status("FAILED")
+-            return
+-
+-        if "Orchestration aborted" in message or "Planner:" in message:
+-            self._set_task_status("FAILED")
+-            return
+-
+-        if "Complex task synchronized successfully" in message:
+-            self._set_task_status("COMPLETED")
+-            return
+-
+-    def _reset_task_tracker(self, task_text: str, task_id: Optional[str]) -> None:
+-        self.active_task_text = task_text
+-        self.active_task_id = task_id
+-        self.active_task_status = "SUBMITTED"
+-        self.active_task_steps = {}
+-        self.active_task_agents = set()
+-        self.active_task_total_steps = None
++        if "Orchestration Plan" in message:
++            m = re.search(r"Split into (\d+) agent steps", message)
++            if m: self._set_task_total_steps(int(m.group(1))); self._set_task_status("PLANNED")
++        elif "Handing off to" in message:
++            m = re.search(r"Step (\d+).*Handing off to \[bold\](.+?)\[/\]", message)
++            if m: self._update_step(int(m.group(1)), m.group(2), "RUNNING"); self._set_task_status("RUNNING")
++        elif "Step" in message and "OK" in message:
++            m = re.search(r"Step (\d+) OK:.*\[bold\](.+?)\[/\]", message)
++            if m: self._update_step(int(m.group(1)), m.group(2), "COMPLETED")
++
++    def _set_task_status(self, status: str) -> None: self.active_task_status = status; self._render_task_tracker()
++    def _set_task_total_steps(self, total: int) -> None:
++        self.active_task_total_steps = total
++        for i in range(1, total + 1): self.active_task_steps.setdefault(i, {"agent": None, "status": "PENDING"})
+         self._render_task_tracker()
+-
+-    def _set_task_status(self, status: str) -> None:
+-        self.active_task_status = status
+-        self._render_task_tracker()
+-
+-    def _set_task_total_steps(self, total_steps: int) -> None:
+-        self.active_task_total_steps = total_steps
+-        for i in range(1, total_steps + 1):
+-            self.active_task_steps.setdefault(i, {"agent": None, "status": "PENDING"})
+-        self._render_task_tracker()
+-
+-    def _update_step(self, step_index: int, agent_name: Optional[str], status: str) -> None:
+-        step = self.active_task_steps.get(step_index, {"agent": None, "status": "PENDING"})
+-        if agent_name:
+-            step["agent"] = agent_name
+-            self.active_task_agents.add(agent_name)
+-        step["status"] = status
+-        self.active_task_steps[step_index] = step
+-        self._render_task_tracker()
+-
++    def _update_step(self, idx: int, agent: Optional[str], status: str) -> None:
++        step = self.active_task_steps.get(idx, {"agent": None, "status": "PENDING"})
++        if agent: step["agent"] = agent; self.active_task_agents.add(agent)
++        step["status"] = status; self.active_task_steps[idx] = step; self._render_task_tracker()
+     def _render_task_tracker(self) -> None:
+         try:
+-            task_current = self.query_one("#task-current", Static)
+-            task_progress = self.query_one("#task-progress", Static)
+-            task_connectors = self.query_one("#task-connectors", Static)
+-        except Exception:
+-            return
+-
+-        task_text = self.active_task_text or "No task submitted yet."
+-        task_current.update(task_text)
+-
+-        status_line = f"Status: {self.active_task_status or 'IDLE'}"
+-        if self.active_task_id:
+-            status_line += f"\nTask ID: {self.active_task_id}"
+-
+-        steps_lines = []
+-        if self.active_task_steps:
+-            for idx in sorted(self.active_task_steps.keys()):
+-                step = self.active_task_steps[idx]
+-                agent = step.get("agent") or "TBD"
+-                step_status = step.get("status") or "PENDING"
+-                steps_lines.append(f"{idx}. {agent} - {step_status}")
+-        elif self.active_task_total_steps:
+-            steps_lines.append(f"Steps: {self.active_task_total_steps} (awaiting plan)")
+-
+-        progress_text = status_line
+-        if steps_lines:
+-            progress_text += "\n" + "\n".join(steps_lines)
+-        task_progress.update(progress_text)
+-
+-        if self.active_task_agents:
+-            task_connectors.update(", ".join(sorted(self.active_task_agents)))
+-        else:
+-            task_connectors.update("None")
++            self.query_one("#task-current", Static).update(self.active_task_text or "No task submitted yet.")
++            prog = f"Status: {self.active_task_status or 'IDLE'}\n" + "\n".join([f"{i}. {s['agent'] or 'TBD'} - {s['status']}" for i,s in sorted(self.active_task_steps.items())])
++            self.query_one("#task-progress", Static).update(prog)
++            self.query_one("#task-connectors", Static).update(", ".join(sorted(self.active_task_agents)) or "None")
++        except: pass
+ 
+     async def on_key(self, event) -> None:
+-        """Global key intercept to absolutely guarantee the Enter key works."""
+         if event.key == "enter":
+-            # If the command input has focus, manually force the submission
+-            cmd_input = self.query_one("#command-input", Input)
+-            if cmd_input.has_focus:
+-                cmd = cmd_input.value.strip()
+-                if cmd:
+-                    cmd_input.value = ""
+-                    log_view = self.query_one("#log-view", RichLog)
+-                    log_view.write(f"[bold cyan]> {cmd}[/]")
+-                    if cmd.startswith("/"):
+-                        await self._handle_slash_command(cmd, log_view)
+-                    else:
+-                        self.run_worker(self._run_task_command(cmd), thread=False)
+-                return
++            inp = self.query_one("#command-input", Input)
++            if inp.has_focus and inp.value.strip():
++                cmd = inp.value.strip(); inp.value = ""; log = self.query_one("#log-view", RichLog); log.write(f"[bold cyan]> {cmd}[/]")
++                if cmd.startswith("/"): await self._handle_slash_command(cmd, log)
++                else: self.run_worker(self._run_task_command(cmd), thread=False)
+ 
+     @on(Input.Submitted, "#command-input")
+     async def handle_input_submit(self, event: Input.Submitted) -> None:
+-        """Hard override to capture the Enter key directly off the named widget."""
+         cmd = event.value.strip()
+-        if not cmd:
+-            return
+-            
+-        try:
+-            log_view = self.query_one("#log-view", RichLog)
+-            self.query_one("#command-input", Input).value = ""
+-            log_view.write(f"[bold cyan]> {cmd}[/]")
+-            
+-            if cmd.startswith("/"):
+-                await self._handle_slash_command(cmd, log_view)
+-            else:
+-                self.run_worker(self._run_task_command(cmd), thread=False)
+-                
+-            try:
+-                self.query_one("#command-input").focus()
+-            except:
+-                pass
+-        except Exception as e:
+-            self.log(f"Command Error: {e}")
+-
+-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+-        """Fallback central event handler for all Input Submits."""
+-        input_id = getattr(event.input, "id", None)
+-        
+-        # 1. Main Command Input (Fallback)
+-        if input_id == "command-input":
+-            # Already handled by @on above, but catching here just in case!
+-            pass
+-            
+-        # 2. Inline Login Inputs
+-        elif input_id in ("inline-email", "inline-password", "inline-confirm", "inline-base-url"):
+-            confirm = self.query_one("#inline-confirm", Input).value.strip()
+-            if confirm:
+-                await self._authenticate_inline(mode="signup")
+-            else:
+-                await self._authenticate_inline(mode="login")
+-
+-    def action_clear(self) -> None:
+-        self.query_one("#log-view", RichLog).clear()
+-
+-    def action_services(self) -> None:
+-        self.run_worker(self.refresh_connected_services(show_log=True), thread=False)
+-
+-    def action_workflows(self) -> None:
+-        self.push_screen(WorkflowListScreen(self))
++        if cmd:
++            log = self.query_one("#log-view", RichLog); event.input.value = ""; log.write(f"[bold cyan]> {cmd}[/]")
++            if cmd.startswith("/"): await self._handle_slash_command(cmd, log)
++            else: self.run_worker(self._run_task_command(cmd), thread=False)
+ 
+     def _set_auth_visible(self, visible: bool) -> None:
+-        """Force display updates to ensure login screens appear properly."""
+         try:
+-            auth_container = self.query_one("#auth-container", Container)
+-            main_shell = self.query_one("#main-shell", Container)
+-            if visible:
+-                auth_container.styles.display = "block"
+-                main_shell.styles.display = "none"
+-                try:
+-                    self.query_one("#inline-email", Input).focus()
+-                except:
+-                    pass
+-            else:
+-                auth_container.styles.display = "none"
+-                main_shell.styles.display = "block"
+-        except Exception as e:
+-            self.log(f"Failed to toggle auth visibility: {e}")
+-
+-    def _set_inline_auth_error(self, message: str) -> None:
+-        label = self.query_one("#inline-auth-error", Label)
+-        label.update(message)
+-
+-    async def _do_inline_login(self, email: str, password: str, base_url: str) -> Optional[Dict[str, Any]]:
+-        response = await _request(
+-            "POST",
+-            base_url,
+-            "/auth/login",
+-            data={"username": email, "password": password},
+-            headers=_auth_header(self.eat),
+-        )
+-        if response.status_code != 200:
+-            raise RuntimeError(response.json().get("detail", response.text))
+-        return response.json()
+-
+-    async def _generate_inline_eat(self, token: str, base_url: str) -> str:
+-        response = await _request(
+-            "POST",
+-            base_url,
+-            "/auth/tokens/generate-eat",
+-            headers=_auth_header(token),
+-        )
+-        if response.status_code != 200:
+-            raise RuntimeError(response.json().get("detail", response.text))
+-        return response.json().get("eat")
+-
+-    @on(Button.Pressed, "#inline-quit-btn")
+-    def handle_inline_quit(self) -> None:
+-        self.exit()
+-
+-    @on(Button.Pressed, "#inline-login-btn")
+-    async def handle_inline_login(self) -> None:
+-        await self._authenticate_inline(mode="login")
+-
+-    @on(Button.Pressed, "#inline-signup-btn")
+-    async def handle_inline_signup(self) -> None:
+-        await self._authenticate_inline(mode="signup")
+-
+-    @on(Input.Submitted, "#inline-email, #inline-password, #inline-confirm, #inline-base-url")
+-    async def handle_inline_submit(self) -> None:
+-        confirm = self.query_one("#inline-confirm", Input).value.strip()
+-        if confirm:
+-            await self._authenticate_inline(mode="signup")
+-        else:
+-            await self._authenticate_inline(mode="login")
++            self.query_one("#auth-container").styles.display = "block" if visible else "none"
++            self.query_one("#main-shell").styles.display = "none" if visible else "block"
++            if visible: self.query_one("#inline-email").focus()
++        except: pass
+ 
+     async def _authenticate_inline(self, mode: str) -> None:
+-        email = self.query_one("#inline-email", Input).value.strip()
+-        password = self.query_one("#inline-password", Input).value.strip()
+-        confirm = self.query_one("#inline-confirm", Input).value.strip()
+-        base_url = self.query_one("#inline-base-url", Input).value.strip() or DEFAULT_BASE_URL
+-
+-        if not email or not password:
+-            self._set_inline_auth_error("Email and password are required.")
+-            return
+-
++        email, pwd, cfg_url = self.query_one("#inline-email").value, self.query_one("#inline-password").value, self.query_one("#inline-base-url").value or DEFAULT_BASE_URL
+         try:
+-            if mode == "signup":
+-                if password != confirm:
+-                    self._set_inline_auth_error("Passwords do not match.")
+-                    return
+-                response = await _request(
+-                    "POST",
+-                    base_url,
+-                    "/auth/signup",
+-                    json_body={"email": email, "password": password, "user_metadata": {"source": "tui_client"}},
+-                    headers=_auth_header(self.eat),
+-                )
+-                if response.status_code != 201:
+-                    try:
+-                        err = response.json().get("detail", response.text)
+-                    except:
+-                        err = response.text
+-                    self._set_inline_auth_error(str(err))
+-                    return
+-
+-            login_payload = await self._do_inline_login(email, password, base_url)
+-            token = login_payload.get("access_token")
+-            eat = await self._generate_inline_eat(token, base_url)
+-        except Exception as exc:
+-            self._set_inline_auth_error(str(exc))
+-            return
+-
+-        self.base_url = base_url
+-        self.token = token
+-        self.eat = eat
+-        self.user_email = email
+-        save_config({
+-            "base_url": self.base_url,
+-            "token": self.token,
+-            "eat": self.eat,
+-            "email": self.user_email,
+-        })
+-        self._set_inline_auth_error("")
+-        self._set_auth_visible(False)
+-        self.run_worker(self.refresh_connected_services(), thread=False)
+-        if hasattr(self, "_auth_future") and self._auth_future and not self._auth_future.done():
+-            self._auth_future.set_result(True)
+-
+-    def _handle_auth_result(self, result: Optional[Dict[str, Any]]) -> None:
+-        if not result:
+-            return
+-        self.base_url = result.get("base_url") or DEFAULT_BASE_URL
+-        self.token = result.get("token")
+-        self.eat = result.get("eat")
+-        self.user_email = result.get("email")
+-        self.run_worker(self.refresh_connected_services(), thread=False)
+-
+-    async def _prompt_reauth(self) -> bool:
+-        loop = asyncio.get_running_loop()
+-        self._auth_future = loop.create_future()
+-        self._set_auth_visible(True)
+-        return await self._auth_future
+-
+-    async def _ensure_eat(self) -> Optional[str]:
+-        if self.eat:
+-            return self.eat
+-        if not self.token:
+-            ok = await self._prompt_reauth()
+-            if not ok:
+-                return None
+-        response = await _request(
+-            "POST",
+-            self.base_url,
+-            "/auth/tokens/generate-eat",
+-            headers=_auth_header(self.token),
+-        )
+-        if response.status_code == 200:
+-            self.eat = response.json().get("eat")
+-            save_config({
+-                "base_url": self.base_url,
+-                "token": self.token,
+-                "eat": self.eat,
+-                "email": self.user_email,
+-            })
+-            return self.eat
+-        if _response_indicates_token_issue(response):
+-            ok = await self._prompt_reauth()
+-            if ok:
+-                return await self._ensure_eat()
+-        return None
+-
+-    async def _authed_request(
+-        self,
+-        method: str,
+-        path: str,
+-        *,
+-        json_body: Optional[Dict[str, Any]] = None,
+-        data: Optional[Dict[str, Any]] = None,
+-        headers: Optional[Dict[str, str]] = None,
+-        use_session_token: bool = False,
+-        allow_retry: bool = True,
+-    ) -> httpx.Response:
+-        token = self.token if use_session_token else await self._ensure_eat()
+-        request_headers = _merge_headers(headers, _auth_header(token))
+-        response = await _request(
+-            method,
+-            self.base_url,
+-            path,
+-            json_body=json_body,
+-            data=data,
+-            headers=request_headers,
+-        )
+-        if allow_retry and _response_indicates_token_issue(response):
+-            if await self._prompt_reauth():
+-                token = self.token if use_session_token else await self._ensure_eat()
+-                retry_headers = _merge_headers(headers, _auth_header(token))
+-                return await _request(
+-                    method,
+-                    self.base_url,
+-                    path,
+-                    json_body=json_body,
+-                    data=data,
+-                    headers=retry_headers,
+-                )
+-        return response
+-
+-    async def _get_connected_providers(self) -> Optional[set]:
+-        eat = await self._ensure_eat()
+-        if not eat:
+-            return None
+-        response = await self._authed_request("GET", "/credentials")
+-        if response.status_code != 200:
+-            return None
+-        payload = response.json()
+-        connected = {item.get("provider_name", "").lower() for item in payload if item.get("provider_name")}
+-        self.connected_providers = connected
+-        return connected
+-
+-    async def _prompt_connect_provider(self, provider: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+-        loop = asyncio.get_running_loop()
+-        future: asyncio.Future = loop.create_future()
+-
+-        def _handle_result(result: Optional[Dict[str, Any]]) -> None:
+-            if not future.done():
+-                future.set_result(result)
++            if mode=="signup": await _request("POST", cfg_url, "/auth/signup", json_body={"email":email,"password":pwd})
++            resp = await _request("POST", cfg_url, "/auth/login", data={"username":email,"password":pwd})
++            self.token = resp.json().get("access_token")
++            eat_resp = await _request("POST", cfg_url, "/auth/tokens/generate-eat", headers=_auth_header(self.token))
++            self.eat = eat_resp.json().get("eat"); self.base_url, self.user_email = cfg_url, email
++            save_config({"base_url":self.base_url,"token":self.token,"eat":self.eat,"email":self.user_email})
++            self._set_auth_visible(False); self.run_worker(self.refresh_available_providers(), thread=False)
++        except Exception as e: self.query_one("#inline-auth-error").update(str(e))
+ 
+-        self.push_screen(ServiceConnectScreen(provider), _handle_result)
+-        return await future
+-
+-    async def _connect_provider_from_vault(self, provider: Dict[str, Any], vault_entry: Dict[str, Any]) -> bool:
+-        """Re-applies a local vault credential to the current backend session."""
+-        log_view = self.query_one("#log-view", RichLog)
+-        display_name = provider.get("name", provider.get("id", "Provider"))
+-        payload = {
+-            "provider_name": provider.get("id"),
+-            "credential_type": vault_entry["type"],
+-            "token": vault_entry["token"],
+-            "metadata": vault_entry.get("metadata") or {},
+-        }
+-        if "metadata" in payload:
+-            payload["metadata"]["sync_from"] = "tui_vault"
+-            payload["metadata"]["sync_at"] = time.time()
+-
+-        response = await self._authed_request("POST", "/credentials", json_body=payload)
+-        if response.status_code not in (200, 201):
+-            log_view.write(f"[bold yellow]Vault sync failed for {display_name}:[/] {_extract_error_detail(response)}")
+-            return False
+-            
+-        log_view.write(f"[bold green]Auto-Connected:[/] {display_name} from local vault.")
+-        return True
++    @on(Button.Pressed, "#inline-login-btn")
++    async def do_login(self) -> None: await self._authenticate_inline("login")
++    @on(Button.Pressed, "#inline-signup-btn")
++    async def do_signup(self) -> None: await self._authenticate_inline("signup")
++    @on(Button.Pressed, "#inline-quit-btn")
++    def do_quit(self) -> None: self.exit()
+ 
+-    async def _ensure_required_providers_connected(self, command: str, log_view: RichLog) -> bool:
++    async def _authed_request(self, method: str, path: str, **kwargs) -> httpx.Response:
+         eat = await self._ensure_eat()
+-        if not eat:
+-            return False
+-            
+-        required = await _infer_required_providers_via_backend(self.base_url, eat, command)
+-        if not required:
+-            return True
+-
+-        connected_set = await self._get_connected_providers()
+-        if connected_set is None:
+-            log_view.write("[bold red]Unable to check connected providers. Please login again.[/]")
+-            return False
+-
+-        missing = [provider for provider in required if provider.get("id") not in connected_set]
+-        if not missing:
+-            return True
+-            
+-        # Try local vault first
+-        vault = VaultService.list_credentials(self.base_url, self.user_email)
+-        
+-        still_missing = []
+-        for provider in missing:
+-            provider_id = provider.get("id")
+-            if provider_id in vault:
+-                if await self._connect_provider_from_vault(provider, vault[provider_id]):
+-                    connected_set.add(provider_id)
+-                    continue
+-            still_missing.append(provider)
+-
+-        for provider in still_missing:
+-            display_name = provider.get("name", provider.get("id", "Provider"))
+-            log_view.write(f"[bold yellow]Connection required:[/] {display_name}")
+-            result = await self._prompt_connect_provider(provider)
+-            if not result or not result.get("provider_name"):
+-                log_view.write("[yellow]Connection cancelled. Task aborted.[/]")
+-                return False
+-            await self.refresh_connected_services(show_log=True)
+-            if provider.get("id") not in self.connected_providers:
+-                log_view.write(f"[bold red]Connection failed:[/] {display_name} still not connected.")
+-                return False
+-
+-        return True
+-
+-    async def _run_task_command(self, command: str) -> None:
+-        log_view = self.query_one("#log-view", RichLog)
+-        
+-        # Immediate visual feedback
+-        log_view.write(f"[bold cyan]> {command}[/]")
+-        log_view.write("[dim]System:[/] Analyzing task context and dependencies...")
+-
+-        try:
+-            eat = await self._ensure_eat()
+-            if not eat:
+-                log_view.write("[bold red]Auth required:[/] Please login to continue.")
+-                return
+-
+-            ok = await self._ensure_required_providers_connected(command, log_view)
+-            if not ok:
+-                return
++        return await _request(method, self.base_url, path, headers=_merge_headers(kwargs.get("headers"), _auth_header(eat)), **kwargs)
+ 
+-            self._reset_task_tracker(command, None)
+-
+-            request_body = {
+-                "command": command,
+-                "metadata": {
+-                    "client": "engram-tui",
+-                    "timestamp": time.time(),
+-                },
+-            }
+-
+-            log_view.write("[dim]Submitting task to Engram backend...[/]")
+-            response = await self._authed_request(
+-                "POST",
+-                "/tasks/submit",
+-                json_body=request_body,
+-            )
+-            
+-            if response.status_code != 200:
+-                log_view.write(f"[bold red]Submission failed:[/] {_extract_error_detail(response)}")
+-                return
+-
+-            payload = response.json()
+-            task_id = payload.get("task_id")
+-            log_view.write(f"[bold green]Task accepted:[/] {task_id}")
+-            self._reset_task_tracker(command, str(task_id))
+-        except Exception as exc:
+-            log_view.write(f"[bold red]System Error:[/] {str(exc)}")
+-            if "ConnectError" in str(exc):
+-                log_view.write(f"[yellow]Hint:[/] Ensure backend is running at [bold]{self.base_url}[/]")
+-            return
+-
+-        payload = response.json()
+-        task_id = payload.get("task_id")
+-        log_view.write(f"[bold green]Task accepted:[/] {task_id}")
+-        self._reset_task_tracker(command, str(task_id))
+-
+-
+-        last_status = None
+-        while True:
+-            await asyncio.sleep(2.0)
+-            try:
+-                status_resp = await self._authed_request(
+-                    "GET",
+-                    f"/tasks/{task_id}",
+-                )
+-            except Exception as exc:
+-                log_view.write(f"[bold red]Status check error:[/] {str(exc)}")
+-                return
+-            if status_resp.status_code != 200:
+-                log_view.write(f"[bold red]Status check failed:[/] {_extract_error_detail(status_resp)}")
+-                return
+-            task_status = status_resp.json()
+-            status = task_status.get("status")
+-            if status != last_status:
+-                last_status = status
+-                log_view.write(f"[dim]Status:[/] {status}")
+-                self._set_task_status(status)
+-            if status in ("COMPLETED", "DEAD_LETTER"):
+-                if task_status.get("last_error"):
+-                    log_view.write(f"[bold red]Last Error:[/] {task_status['last_error']}")
+-                results = task_status.get("results")
+-                if results:
+-                    log_view.write(f"[bold]Results:[/]\n{json.dumps(results, indent=2)}")
+-                else:
+-                    log_view.write("[dim]No workflow results recorded yet.[/]")
+-                break
+-
+-    async def _list_tasks(self, limit: int = 10) -> None:
+-        log_view = self.query_one("#log-view", RichLog)
+-        response = await self._authed_request("GET", f"/tasks?limit={limit}")
+-        if response.status_code != 200:
+-            log_view.write(f"[bold red]Task list failed:[/] {_extract_error_detail(response)}")
+-            return
+-        rows = response.json()
+-        if not rows:
+-            log_view.write("[dim]No tasks found.[/]")
+-            return
+-        log_view.write("[bold]Recent Tasks:[/]")
+-        for row in rows:
+-            log_view.write(f"{row.get('id')} | {row.get('status')} | {row.get('updated_at')}")
++    async def _ensure_eat(self) -> str: return self.eat # Simplified for reset
+ 
+     async def refresh_available_providers(self) -> None:
+-        """Fetches the list of supported providers from the backend and updates the UI."""
+         global PROVIDERS, PROVIDER_MAP
+-        response = await self._authed_request("GET", "/credentials/providers")
+-        if response.status_code == 200:
+-            PROVIDERS = response.json()
+-            PROVIDER_MAP = {p["id"]: p for p in PROVIDERS}
+-            
+-            try:
+-                # Rebuild the services panel
+-                panel = self.query_one("#services-panel", Container)
+-                # Remove existing service rows (keep the title)
+-                panel.query("Horizontal.service-row").remove()
+-                
+-                for provider in PROVIDERS:
+-                    row = Horizontal(
+-                        Label(provider["name"], id=f"service-name-{provider['id']}", classes="service-name"),
+-                        Label("Checking...", id=f"service-status-{provider['id']}", classes="service-status status-waiting"),
+-                        Button("Connect", id=f"service-connect-{provider['id']}", classes="service-btn"),
+-                        classes="service-row"
+-                    )
+-                    panel.mount(row)
+-                
+-                await self.refresh_connected_services()
+-            except Exception as e:
+-                self.log(f"Service refresh failed: {e}")
+-
+-    def _set_service_status(self, provider_id: str, status: str, connected: bool) -> None:
++        resp = await self._authed_request("GET", "/credentials/providers")
++        if resp.status_code == 200:
++            PROVIDERS = resp.json(); PROVIDER_MAP = {p["id"]: p for p in PROVIDERS}
++            panel = self.query_one("#services-panel")
++            panel.query("Horizontal.service-row").remove()
++            for p in PROVIDERS:
++                panel.mount(Horizontal(Label(p["name"], classes="service-name"), Label("Unknown", id=f"service-status-{p['id']}", classes="service-status"), Button("Connect", id=f"service-connect-{p['id']}", classes="service-btn"), classes="service-row"))
++            await self.refresh_connected_services()
++
++    async def refresh_connected_services(self, show_log=False) -> None:
++        resp = await self._authed_request("GET", "/credentials")
++        if resp.status_code == 200:
++            conn = {item["provider_name"].lower() for item in resp.json() if "provider_name" in item}
++            for p in PROVIDERS:
++                is_c = p["id"] in conn; lbl = self.query_one(f"#service-status-{p['id']}", Label)
++                lbl.update("Connected" if is_c else "Not connected"); lbl.add_class("status-ok" if is_c else "status-waiting")
++                self.query_one(f"#service-connect-{p['id']}", Button).label = "Connected" if is_c else "Connect"
++
++    def _open_service_connect(self, provider_id: str) -> None:
++        # MAP SELECTION TO BACKEND IDs
++        target_id = {"openai":"openai", "anthropic":"claude", "google":"gemini", "llama":"llama", "mistral":"mistral", "grok":"grok", "perplexity":"perplexity", "deepseek":"deepseek"}.get(provider_id, provider_id)
++        p = PROVIDER_MAP.get(target_id) or {"id": target_id, "name": target_id.capitalize(), "auth": "api_key"}
++        
++        screens = {
++            "openai": OpenAIConnectScreen,
++            "claude": AnthropicConnectScreen,
++            "gemini": GoogleConnectScreen,
++            "llama": LlamaConnectScreen,
++            "mistral": MistralConnectScreen,
++            "grok": GrokConnectScreen,
++            "perplexity": PerplexityConnectScreen,
++            "deepseek": DeepseekConnectScreen,
++        }
++        
++        ScreenClass = screens.get(target_id, GenericServiceConnectScreen)
+         try:
+-            label = self.query_one(f"#service-status-{provider_id}", Label)
+-            label.update(status)
+-            label.remove_class("status-ok")
+-            label.remove_class("status-waiting")
+-            label.remove_class("status-error")
+-            if connected:
+-                label.add_class("status-ok")
+-            else:
+-                label.add_class("status-waiting")
+-
+-            button = self.query_one(f"#service-connect-{provider_id}", Button)
+-            if provider_id == "custom":
+-                button.disabled = False
+-                button.label = "Add"
+-            else:
+-                button.disabled = connected
+-                button.label = "Connected" if connected else "Connect"
+-        except Exception:
+-            pass # Panel might not be fully mounted or refreshed yet
+-
+-    async def _handle_async_auth_error(self, provider_id: str):
+-        """Handle auth errors emitted by the backend background worker."""
+-        provider = PROVIDER_MAP.get(provider_id)
+-        if provider:
+-            log_view = self.query_one("#log-view", RichLog)
+-            log_view.write(f"[bold yellow]Triggering re-authentication for {provider['name']}...[/]")
+-            await self._prompt_connect_provider(provider)
+-            await self.refresh_connected_services(show_log=True)
+-
+-    async def refresh_connected_services(self, show_log: bool = False) -> None:
+-        log_view = self.query_one("#log-view", RichLog)
+-        if show_log:
+-            log_view.write("[dim]Refreshing connected services...[/]")
+-
+-        if not self.token and not self.eat:
+-            for provider in PROVIDERS:
+-                self._set_service_status(provider["id"], "Login required", False)
+-            return
+-
+-        eat = await self._ensure_eat()
+-        if not eat:
+-            for provider in PROVIDERS:
+-                self._set_service_status(provider["id"], "Auth required", False)
+-            return
+-
+-        response = await self._authed_request("GET", "/credentials")
+-        if response.status_code != 200:
+-            for provider in PROVIDERS:
+-                self._set_service_status(provider["id"], "Unavailable", False)
+-            if show_log:
+-                log_view.write(f"[bold red]Credential fetch failed:[/] {_extract_error_detail(response)}")
+-            return
++            log = self.query_one("#log-view", RichLog)
++            log.write(f"[bold yellow]DEBUG: Attempting to invoke _open_service_connect with target_id={target_id}[/]")
++            # Ensure the instance can be instantiated at least
++            instance = ScreenClass(p)
++            log.write(f"[bold yellow]DEBUG: Successfully instantiated {ScreenClass.__name__}[/]")
++            self.push_screen(instance, lambda _: self.run_worker(self.refresh_connected_services(), thread=False))
++            log.write(f"[bold yellow]DEBUG: Successfully pushed {ScreenClass.__name__}[/]")
++        except Exception as e:
++            import traceback
++            try: self.query_one("#log-view", RichLog).write(f"[bold red]CRASH in _open_service_connect: {str(e)} {traceback.format_exc()}[/]")
++            except: pass
+ 
+-        payload = response.json()
+-        connected = {item.get("provider_name", "").lower() for item in payload if item.get("provider_name")}
+-        self.connected_providers = connected
+-
+-        known = {provider["id"] for provider in PROVIDERS if not provider.get("custom")}
+-        for provider in PROVIDERS:
+-            if provider.get("custom"):
+-                extras = [name for name in connected if name not in known]
+-                if extras:
+-                    self._set_service_status(provider["id"], f"Connected ({len(extras)})", True)
+-                else:
+-                    self._set_service_status(provider["id"], "Not connected", False)
+-                continue
+-            is_connected = provider["id"] in connected
+-            self._set_service_status(provider["id"], "Connected" if is_connected else "Not connected", is_connected)
+-
+-    def _open_service_connect(self, provider_id: str, custom_name: Optional[str] = None) -> None:
+-        provider = PROVIDER_MAP.get(provider_id)
+-        if not provider:
+-            return
+-        if provider.get("custom") and custom_name:
+-            provider = {
+-                **provider,
+-                "prefill_name": custom_name,
+-                "display_name": custom_name,
+-            }
+-        self.push_screen(ServiceConnectScreen(provider), self._handle_service_connect_result)
+-
+-    def _handle_service_connect_result(self, result: Optional[Dict[str, Any]]) -> None:
+-        if not result:
+-            return
+-        self.run_worker(self.refresh_connected_services(show_log=True), thread=False)
++    async def _run_task_command(self, command: str) -> None:
++        self.active_task_text, self.active_task_status = command, "SUBMITTING"
++        resp = await self._authed_request("POST", "/tasks/submit", json_body={"command": command})
++        if resp.status_code == 200: 
++            tid = resp.json().get("task_id")
++            self.query_one("#log-view", RichLog).write(f"[bold green]Task accepted:[/] {tid}")
++            while True:
++                await asyncio.sleep(2)
++                st = await self._authed_request("GET", f"/tasks/{tid}")
++                status = st.json().get("status"); self._set_task_status(status)
++                if status in ("COMPLETED", "DEAD_LETTER"): break
+ 
+     @on(Button.Pressed)
+-    def handle_service_button(self, event: Button.Pressed) -> None:
+-        button_id = event.button.id or ""
+-        if button_id.startswith("service-connect-"):
+-            provider_id = button_id.replace("service-connect-", "")
+-            self._open_service_connect(provider_id)
+-
+-if __name__ == "__main__":
+-    app = EngramTUI()
+-    app.run()
++    def handle_buttons(self, event: Button.Pressed) -> None:
++        bid = event.button.id or ""
++        if bid.startswith("service-connect-"): self._open_service_connect(bid.replace("service-connect-", ""))
++
++if __name__ == "__main__": EngramTUI().run()

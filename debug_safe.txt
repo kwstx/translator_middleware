@@ -1,0 +1,149 @@
+?--- Testing Extensibility: Adding a New Tool (HYPOTHETICAL) ---
+2026-03-28 14:00:23 [debug    ] ProtocolGraph edge added       source_protocol=A2A target_protocol=MCP weight=1.0
+2026-03-28 14:00:23 [debug    ] ProtocolGraph edge added       source_protocol=NL target_protocol=MCP weight=1.0
+2026-03-28 14:00:23 [info     ] ProtocolGraph built            edge_count=2 node_count=3
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=CLAUDE
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=PERPLEXITY
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=SLACK
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=OPENCLAW
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=MIROFISH
+2026-03-28 14:00:23 [info     ] Successfully loaded ontology from C:\Users\galan\translator_middleware\app\semantic\protocols.owl
+2026-03-28 14:00:23 [debug    ] Connector registered           name=HYPOTHETICAL
+python : C:\Users\galan\AppDa
+ta\Roaming\Python\Python314\s
+ite-packages\jwt\api_jwt.py:1
+47: 
+InsecureKeyLengthWarning: 
+The HMAC key is 16 bytes 
+long, which is below the 
+minimum recommended length 
+of 32 bytes for SHA256. See 
+RFC 7518 Section 3.2.
+At line:1 char:1
++ python scripts/test_extensi
+bility.py > test_result.txt 
+2>&1 ; cat tes ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~
+    + CategoryInfo           
+   : NotSpecified: (C:\User  
+  s\galan\...18 Section 3.   
+ 2.:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+  return self._jws.encode(
+C:\Users\galan\AppData\Roamin
+g\Python\Python314\site-packa
+ges\jwt\api_jwt.py:365: 
+InsecureKeyLengthWarning: 
+The HMAC key is 16 bytes 
+long, which is below the 
+minimum recommended length 
+of 32 bytes for SHA256. See 
+RFC 7518 Section 3.2.
+  decoded = 
+self.decode_complete(
+
+Scenario 1: Authorized access to HYPOTHETICAL tool
+2026-03-28 14:00:28 [info     ] Handoff async authorized for tool source_protocol=MCP target_protocol=HYPOTHETICAL tool=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [info     ] Resolving data silo from MCP to HYPOTHETICAL connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [info     ] Source data validated successfully. connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [debug    ] Flattened data: {'coord': 'analyze_data', 'payload.dataset_id': 'DS-99', 'payload.depth': 'full'} connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [warning  ] Schema reconciliation failed   connector=HYPOTHETICAL error='Predicate without definition (or error in resolver): map_field/2' source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [debug    ] Connector: translated request  connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [info     ] Executing call to Hypothetical Tool connector=HYPOTHETICAL request={'h_id': 'temp_001', 'h_action': 'analyze_data', 'h_params': {'dataset_id': 'DS-99', 'depth': 'full'}} source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [debug    ] Connector: received response   connector=HYPOTHETICAL source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+2026-03-28 14:00:28 [info     ] Connector execution successful connector=HYPOTHETICAL duration=0.05551266670227051 source_protocol=MCP target_protocol=HYPOTHETICAL user_id=032f8140-ebab-4505-8527-24f11c32e663
+Result Status: success
+Result Payload: {'coord': 'hypothetical_ack', 'result': {'processed_by': 'hypothetical_engine_v1', 'original_action': 'analyze_data'}, 'msg': "Hypothetical action 'analyze_data' executed successfully."}
+Traceback (most recent call 
+last):
+  File "C:\Users\galan\transl
+ator_middleware\scripts\test_
+extensibility.py", line 49, 
+in test_extensibility
+    print("\u2705 SUCCESS: 
+Authorized access worked as 
+expected.")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^
+  File "C:\Python314\Lib\enco
+dings\cp1253.py", line 19, 
+in encode
+    return codecs.charmap_enc
+ode(input,self.errors,encodin
+g_table)[0]
+           ~~~~~~~~~~~~~~~~~~
+~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+UnicodeEncodeError: 
+'charmap' codec can't encode 
+character '\u2705' in 
+position 0: character maps 
+to <undefined>
+
+During handling of the above 
+exception, another exception 
+occurred:
+
+Traceback (most recent call 
+last):
+  File "C:\Users\galan\transl
+ator_middleware\scripts\test_
+extensibility.py", line 100, 
+in <module>
+    asyncio.run(test_extensib
+ility())
+    ~~~~~~~~~~~^^^^^^^^^^^^^^
+^^^^^^^^
+  File "C:\Python314\Lib\asyn
+cio\runners.py", line 204, 
+in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyn
+cio\runners.py", line 127, 
+in run
+    return self._loop.run_unt
+il_complete(task)
+           ~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyn
+cio\base_events.py", line 
+719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\galan\transl
+ator_middleware\scripts\test_
+extensibility.py", line 51, 
+in test_extensibility
+    print(f"\u274c FAILED: 
+Unexpected error in 
+authorized scenario: 
+{str(e)}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\enco
+dings\cp1253.py", line 19, 
+in encode
+    return codecs.charmap_enc
+ode(input,self.errors,encodin
+g_table)[0]
+           ~~~~~~~~~~~~~~~~~~
+~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+UnicodeEncodeError: 
+'charmap' codec can't encode 
+character '\u274c' in 
+position 0: character maps 
+to <undefined>

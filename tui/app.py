@@ -304,15 +304,8 @@ class BaseServiceConnectScreen(Screen):
             try: self.query_one("#provider-token-input", Input).focus()
             except: pass
 
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-    def _set_error(self, message: str) -> None:
-        label = self.query_one("#service-connect-error", Label)
-        label.update(message)
-
     @on(Button.Pressed, "#service-cancel-btn")
-    def handle_cancel(self) -> None:
+    def action_cancel(self) -> None:
         self.dismiss(None)
 
     @on(Button.Pressed, "#service-connect-btn")
@@ -320,42 +313,48 @@ class BaseServiceConnectScreen(Screen):
         app_ref = self.app
         provider_id = self.provider.get("id")
         if self.provider.get("custom"):
-            provider_name = self.query_one("#provider-name-input", Input).value.strip().lower()
+            try: provider_name = self.query_one("#provider-name-input", Input).value.strip().lower()
+            except: provider_name = provider_id
         else:
-            provider_name = provider_id or ""
+            provider_name = provider_id
 
-        token = self.query_one("#provider-token-input", Input).value.strip()
-        if not provider_name:
-            self._set_error("Provider name is required.")
-            return
+        try: token = self.query_one("#provider-token-input", Input).value.strip()
+        except: token = ""
+        
         if not token:
-            self._set_error("Token is required.")
+            try: self.query_one("#service-connect-error", Label).update("Token/Key cannot be empty.")
+            except: pass
             return
 
-        credential_type = "API_KEY" if self.provider.get("auth") == "api_key" else "OAUTH_TOKEN"
+        credential_type = self.provider.get("auth", "api_key")
         payload = {
             "provider_name": provider_name,
-            "token": token,
             "credential_type": credential_type,
             "metadata": {
-                "source": "tui",
-                "display_name": self.provider.get("name"),
-                "flow": self.provider.get("auth"),
+                "token": token,
+                "token_type": "Bearer" if credential_type == "oauth" else "api_key",
+                "env_key": f"{provider_id.upper()}_API_KEY",
             },
         }
 
-        response = await app_ref._authed_request("POST", "/credentials", json_body=payload)
-        if response.status_code not in (200, 201):
-            self._set_error(_extract_error_detail(response))
-            return
-
-        VaultService.store_credential(app_ref.base_url, app_ref.user_email, provider_name, {
-            "token": token,
-            "type": credential_type,
-            "metadata": payload["metadata"]
-        })
-
-        self.dismiss({"provider_name": provider_name})
+        try:
+            self.query_one("#service-connect-error", Label).update("Connecting...")
+            response = await app_ref._authed_request("POST", "/credentials", json_body=payload)
+            if response.status_code not in (200, 201):
+                try: self.query_one("#service-connect-error", Label).update(f"Error {response.status_code}")
+                except: pass
+                return
+            
+            from app.services.vault import VaultService
+            VaultService.store_credential(app_ref.base_url, app_ref.user_email, provider_name, {
+                "token": token,
+                "type": credential_type,
+                "metadata": payload["metadata"]
+            })
+            self.dismiss({"provider_name": provider_name})
+        except Exception as e:
+            try: self.query_one("#service-connect-error", Label).update(f"Error: {str(e)}")
+            except: pass
 
 class OpenAIConnectScreen(BaseServiceConnectScreen):
     BORDER_COLOR = "#2bdc8d"
@@ -642,13 +641,24 @@ class ProviderSelectionScreen(Screen):
 
     @on(ListView.Selected, "#provider-select-list")
     def on_select(self, event: ListView.Selected) -> None:
-        self.dismiss(event.item.id.replace("sel-", ""))
+        item = event.item
+        item_id = getattr(item, "id", None)
+        if item_id and isinstance(item_id, str) and item_id.startswith("sel-"):
+            self.dismiss(item_id.replace("sel-", ""))
+        else:
+            self.app.query_one("#log-view").write(f"[red]Error: Selected item has no valid id ([/red]{item_id}[red])[/red]")
+            # Do not dismiss if invalid, so we can see the error
 
     @on(Button.Pressed, "#provider-select-btn")
     def on_connect(self) -> None:
         list_view = self.query_one("#provider-select-list", ListView)
-        if list_view.index is not None:
-             self.dismiss(list_view.children[list_view.index].id.replace("sel-", ""))
+        # Getting the highlighted item safely
+        if list_view.highlighted_child:
+            item_id = getattr(list_view.highlighted_child, "id", None)
+            if item_id and isinstance(item_id, str) and item_id.startswith("sel-"):
+                self.dismiss(item_id.replace("sel-", ""))
+                return
+        self.app.query_one("#log-view").write("[red]Error: Selected button but no valid id found.[/red]")
 
     @on(Button.Pressed, "#provider-cancel-btn")
     def on_cancel(self) -> None: self.dismiss(None)
@@ -676,7 +686,7 @@ class WelcomeScreen(Screen):
 
     @on(Button.Pressed, "#welcome-setup-btn")
     def on_setup(self) -> None:
-        self.app.pop_screen()
+        # Keeping WelcomeScreen beneath for smoother transition
         self.app.push_screen(ProviderSelectionScreen(), self.app._handle_provider_setup_result)
 
     async def on_key(self, event) -> None:
@@ -881,8 +891,22 @@ class EngramTUI(App):
         if self.initial_screen == "debug": self.push_screen(DebugScreen(self))
         else: self.push_screen(WelcomeScreen())
 
+    async def _delayed_open_service_connect(self, provider_id: str) -> None:
+        import asyncio
+        await asyncio.sleep(0.3) # Increased for stability
+        self._open_service_connect(provider_id)
+
     def _handle_provider_setup_result(self, provider_id: Optional[str]) -> None:
-        if provider_id: self._open_service_connect(provider_id)
+        try:
+            log = self.query_one("#log-view", RichLog)
+            log.write(f"[bold yellow]DEBUG: ProviderSelectionScreen returned provider_id={provider_id}[/]")
+            if not provider_id:
+                log.write("[bold yellow]DEBUG: No provider selected - wizard cancelled.[/]")
+        except: pass
+        if provider_id: 
+            # Force refresh of available providers first to be sure
+            self.run_worker(self.refresh_available_providers(), thread=False)
+            self.run_worker(self._delayed_open_service_connect(provider_id), thread=False)
 
     @work(exclusive=True, thread=True)
     def message_receiver(self):
@@ -1047,7 +1071,18 @@ class EngramTUI(App):
         }
         
         ScreenClass = screens.get(target_id, GenericServiceConnectScreen)
-        self.push_screen(ScreenClass(p), lambda _: self.run_worker(self.refresh_connected_services(), thread=False))
+        try:
+            log = self.query_one("#log-view", RichLog)
+            log.write(f"[bold yellow]DEBUG: Attempting to invoke _open_service_connect with target_id={target_id}[/]")
+            # Ensure the instance can be instantiated at least
+            instance = ScreenClass(p)
+            log.write(f"[bold yellow]DEBUG: Successfully instantiated {ScreenClass.__name__}[/]")
+            self.push_screen(instance, lambda _: self.run_worker(self.refresh_connected_services(), thread=False))
+            log.write(f"[bold yellow]DEBUG: Successfully pushed {ScreenClass.__name__}[/]")
+        except Exception as e:
+            import traceback
+            try: self.query_one("#log-view", RichLog).write(f"[bold red]CRASH in _open_service_connect: {str(e)} {traceback.format_exc()}[/]")
+            except: pass
 
     async def _run_task_command(self, command: str) -> None:
         self.active_task_text, self.active_task_status = command, "SUBMITTING"
