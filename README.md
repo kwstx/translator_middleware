@@ -1,73 +1,220 @@
-![Engram Logo](assets/logo.png)
+<p align="center">
+  <img src="assets/logo.png" alt="Engram Logo" width="400">
+</p>
 
-# Engram
+<h1 align="center">Engram</h1>
 
-**Connect any agent, any tool, any API. One identity layer. One routing engine. One semantic bridge.**
+<p align="center">
+  <strong>CONNECT ANY AGENT. ANY TOOL. ANY API.</strong><br>
+  One identity layer. One routing engine. One semantic bridge.
+</p>
 
-[![Works with MCP](https://img.shields.io/badge/Works_with-MCP-blue)](https://modelcontextprotocol.io)
-[![Works with A2A](https://img.shields.io/badge/Works_with-A2A-green)](#)
-[![Works with ACP](https://img.shields.io/badge/Works_with-ACP-orange)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <a href="https://github.com/kwstx/engram_translator/actions"><img src="https://img.shields.io/github/actions/workflow/status/kwstx/engram_translator/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://github.com/kwstx/engram_translator/releases"><img src="https://img.shields.io/github/v/release/kwstx/engram_translator?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="https://discord.gg/engram"><img src="https://img.shields.io/discord/1456350064065904867?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Works_with-MCP-blue?style=for-the-badge" alt="Works with MCP">
+  <img src="https://img.shields.io/badge/Works_with-A2A-green?style=for-the-badge" alt="Works with A2A">
+  <img src="https://img.shields.io/badge/Works_with-ACP-orange?style=for-the-badge" alt="Works with ACP">
+</p>
 
-Engram is an orchestration layer that sits between AI agents, external tools, and third-party APIs. It translates protocols (A2A, MCP, ACP), resolves semantic schema differences using OWL ontologies and machine learning, routes tasks through a weighted directed graph, and exposes a unified identity system (Engram Access Tokens) so that every participant -- agent, tool, or human -- authenticates through a single mechanism. Agents register their capabilities and protocols once; Engram handles discovery, compatibility scoring, multi-hop translation, and delivery. If a field mapping is missing, the system logs the failure, predicts the correction via a TF-IDF/LogisticRegression pipeline, auto-applies high-confidence fixes, and retrains itself on the accumulated corrections. Natural language commands are decomposed into atomic tasks, matched to registered agent capabilities, and delegated without the caller needing to know which protocol or endpoint to target. The entire pipeline is observable through Prometheus metrics, Grafana dashboards, and a terminal-based debugging interface.
+**Engram** is the lightweight interoperability layer that sits between any AI agents, tools, and third-party APIs. It translates protocols (A2A, MCP, ACP), auto-fixes schema mismatches with OWL ontologies + self-healing ML, routes tasks through a weighted directed graph, and gives every participant a single EAT token. No more custom glue code.
 
-## Why Engram Exists
+If you are tired of rewriting adapters every time a new agent or standard drops, this is it.
 
-The AI ecosystem is fragmented. Agents speak different protocols. Tools expose incompatible schemas. APIs require per-vendor integration code. Connecting two systems today means writing custom glue for every pair -- and maintaining it when either side changes.
+<p align="center">
+  <a href="https://useengram.com">Website</a> &#183;
+  <a href="https://docs.useengram.com">Docs</a> &#183;
+  <a href="https://docs.useengram.com/showcase">Showcase</a> &#183;
+  <a href="https://discord.gg/engram">Discord</a> &#183;
+  <a href="https://docs.useengram.com/integrations/openclaw">OpenClaw Companion Guide</a>
+</p>
 
-Engram eliminates this by acting as the single integration point. Register once, connect to everything.
+**Preferred setup:** `docker compose up` (or `uvicorn` for local dev).
 
-| Problem | Without Engram | With Engram |
-| :--- | :--- | :--- |
-| **Agent-to-agent communication** | Each pair requires custom protocol adapters. N agents = O(N^2) integrations. | Agents register their protocols. Engram translates between any pair via multi-hop graph routing. |
-| **Schema mismatches** | Manual field mapping for every integration. Breaks silently on upstream changes. | OWL ontology equivalences, PyDatalog rules, and ML-predicted mappings resolve fields automatically. Failures self-heal. |
-| **Tool and API integration** | Per-vendor SDKs, auth flows, and response parsing. | Centralized provider vault. Connectors for OpenAI, Anthropic, Google, Perplexity, Slack, and more. Single EAT token authorizes everything. |
-| **Task routing** | Hardcoded destinations. No fallback if a service is down. | Performance-aware Dijkstra routing. Agents are weighted by latency and success rate. Unreachable agents are auto-deactivated by the heartbeat service. |
-| **Natural language commands** | Requires structured API calls. Users must know the target system. | NL intent resolver decomposes free-text into atomic tasks, maps to agent capabilities, and delegates automatically. |
-| **Observability** | Per-service logging. No unified view. | Prometheus counters/histograms, rolling rate gauges, Grafana dashboards, and a real-time TUI debug console -- all pre-configured. |
-| **Trust and auditability** | No proof that a translation happened correctly. | Every multi-hop translation produces a SHA-256 execution proof chain returned in the API response. |
+---
+
+## Install (recommended)
+
+```bash
+git clone https://github.com/kwstx/engram_translator.git && cd engram_translator
+docker compose up --build -d
+```
+
+Open `http://localhost:8000/docs` for the Swagger UI. The full stack (PostgreSQL, Redis, Prometheus, Grafana) starts automatically.
+
+Upgrading? `git pull && docker compose up --build -d`.
+
+---
+
+## Quick Start
+
+```bash
+# 1. Start Engram
+docker compose up --build
+
+# 2. Register an agent
+curl -X POST http://localhost:8000/api/v1/register \
+  -H "Authorization: Bearer <your-eat-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+    "supported_protocols": ["MCP"],
+    "capabilities": ["shell", "web", "email"],
+    "semantic_tags": ["automation", "research"],
+    "endpoint_url": "http://openclaw:9000"
+  }'
+
+# 3. Translate a message between protocols
+curl -X POST http://localhost:8000/api/v1/beta/translate \
+  -H "Authorization: Bearer <your-eat-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_protocol": "A2A",
+    "target_protocol": "MCP",
+    "payload": {
+      "payload": { "intent": "dispatch", "delivery_window": { "start": "2026-03-12T09:00:00Z" } }
+    }
+  }'
+
+# 4. Delegate a natural-language task (intent is resolved automatically)
+curl -X POST http://localhost:8000/api/v1/delegate \
+  -H "Authorization: Bearer <your-eat-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"command": "Summarize the latest OpenClaw release and send it to Slack"}'
+```
+
+---
+
+## Highlights
+
+- **Protocol translation** -- Full bidirectional A2A, MCP, ACP conversion. Multi-hop routing when no direct edge exists (e.g., A2A -> MCP -> ACP). Version delta upgrades normalize source messages before translation.
+- **Semantic self-healing mapper** -- OWL ontology + PyDatalog rules + TF-IDF/LogisticRegression fallback. On failure: logs the unmapped field, predicts a correction, auto-applies if confidence >= 0.85, and retrains itself every N corrections.
+- **Weighted directed graph routing** -- NetworkX DiGraph with Dijkstra shortest-path. Edge weights are computed from agent latency (`avg_latency * 0.1`) and success rate (`(1.0 - success_rate) * 50.0`). Dead agents are dropped by the heartbeat service.
+- **Unified identity layer** -- One Engram Access Token (EAT) per participant. JWT-based, HS256/RS256, scoped to specific protocols and tools. Issued automatically on `/signup`.
+- **Natural-language orchestration** -- Free-text commands are decomposed into atomic tasks via the IntentResolver, mapped to agent capability tags, and delegated through the Orchestrator without the caller specifying a protocol or endpoint.
+- **Cryptographic execution proofs** -- Every translation hop produces a `v1:sha256:<hash>` proof. Multi-hop translations return an aggregate `v1:agg:<hash>` proving the full chain.
+- **Production observability** -- Prometheus counters, histograms, and rolling-window gauges. Pre-provisioned Grafana dashboards for throughput, error rate, and latency. Real-time TUI debug console with structured event streaming.
+- **Discovery + heartbeat** -- Agents register once. `DiscoveryService` pings `/health` every 60s. Compatibility scoring ranks candidates by `(shared_protocols + mappable_protocols) / total_candidate_protocols`.
+
+---
+
+## Everything We Built So Far
+
+### Core Platform
+
+| Component | Description |
+| :--- | :--- |
+| **FastAPI service** | Async Python backend (`app/main.py`). All routes under `/api/v1`. |
+| **Task queue** | PostgreSQL-backed with lease-based polling, retry up to `TASK_MAX_ATTEMPTS`, dead-letter on exhaustion. |
+| **Real-time TUI** | Textual-based terminal interface. WelcomeScreen, ProviderSelectionScreen, DebugScreen with live task/log/trace tabs. |
+| **Prometheus + Grafana** | `GET /metrics` endpoint. Pre-configured dashboards in `monitoring/grafana/`. |
+
+### Protocol Layer
+
+| Component | Description |
+| :--- | :--- |
+| **TranslatorEngine** | Structural transformation between protocol pairs. Each `(source, target)` maps to a dedicated method. |
+| **Version deltas** | `ProtocolVersionDelta` table stores `rename`, `drop`, `set` rules. BFS finds the upgrade path between versions. |
+| **Multi-hop conversion** | `ProtocolGraph` + `Orchestrator` chains hops via Dijkstra when no direct translator exists. |
+
+### Semantic Bridge
+
+| Component | Description |
+| :--- | :--- |
+| **OWL ontology engine** | `owlready2`-based. Bundled `protocols.owl` defines A2A/MCP/ACP namespace equivalences. |
+| **PyDatalog rules** | Explicit field renames asserted as Datalog facts. Queried before ontology fallback. |
+| **ML fallback pipeline** | `TfidfVectorizer(char, ngram 3-5)` + `LogisticRegression(max_iter=1000)`. Model persisted to `mapping_model.joblib`. |
+| **Self-healing loop** | Failure logged -> ML predicts -> auto-applies if conf >= 0.85 -> retrains every `ML_AUTO_RETRAIN_THRESHOLD` corrections. |
+
+### Routing Engine
+
+| Component | Description |
+| :--- | :--- |
+| **ProtocolGraph** | NetworkX `DiGraph`. Nodes = protocols + agent endpoints. Edges = translation capabilities with computed weights. |
+| **Dynamic weighting** | `weight = 1.0 + (avg_latency * 0.1) + ((1.0 - success_rate) * 50.0)` per agent. |
+| **Compatibility scoring** | `score = (shared_protocols + mappable_protocols) / total_candidate_protocols`. |
+
+### Identity and Security
+
+| Component | Description |
+| :--- | :--- |
+| **EAT system** | JWT with `sub`, `iss`, `aud`, `exp`, `allowed_tools`, `scopes`. Issued on `/signup` or via `scripts/generate_token.py`. |
+| **Scope enforcement** | Route-level guards: `translate:a2a`, `translate:beta`. Tool-level: `scopes.translator = ["*"]` or `["MCP", "ACP"]`. |
+
+---
+
+## How It Works (one glance)
 
 ```mermaid
 flowchart TB
-    subgraph "Sources"
-        AG1["Agent A<br/>Protocol: A2A"]
-        AG2["Agent B<br/>Protocol: MCP"]
-        NL["Human<br/>Natural Language"]
-        SDK["SDK Client<br/>engram_sdk"]
+    subgraph Sources
+        AG1["Agent A (A2A)"]
+        AG2["Agent B (MCP)"]
+        NL["Human (Natural Language)"]
     end
-
-    subgraph "Engram Core"
+    subgraph Engram Core
         AUTH["EAT Auth Layer"]
         IR["Intent Resolver"]
-        PG["Protocol Graph<br/>Dijkstra Routing"]
-        TE["Translator Engine<br/>+ Version Deltas"]
-        SM["Semantic Mapper<br/>OWL / PyDatalog / ML"]
-        TQ["Task Queue<br/>+ Worker Pool"]
-        DS["Discovery Service<br/>Heartbeat + Scoring"]
+        PG["Protocol Graph + Dijkstra"]
+        SM["Semantic Mapper (OWL + ML)"]
+        TQ["Task Queue"]
     end
-
-    subgraph "Targets"
-        AG3["Agent C<br/>Protocol: ACP"]
-        MF["MiroFish Swarm"]
-        TOOL["Tool Connectors<br/>Anthropic / Perplexity / Slack"]
-        API["External APIs<br/>Binance / Coinbase / FRED"]
+    subgraph Targets
+        AG3["Agent C (ACP)"]
+        TOOL["External Tools / APIs"]
     end
-
     AG1 --> AUTH
     AG2 --> AUTH
     NL --> AUTH
-    SDK --> AUTH
     AUTH --> IR
     IR --> PG
-    PG --> TE
-    TE --> SM
+    PG --> SM
     SM --> TQ
-    TQ --> DS
-    DS --> AG3
-    DS --> MF
-    DS --> TOOL
-    DS --> API
+    TQ --> AG3
+    TQ --> TOOL
 ```
+
+---
+
+## Already Works With
+
+| Integration | Type | Notes |
+| :--- | :--- | :--- |
+| **OpenClaw** | Official companion layer | See [companion guide](https://docs.useengram.com/integrations/openclaw) |
+| **Claude Code / Cursor agents** | MCP-compatible | Register with `supported_protocols: ["MCP"]` |
+| **LangGraph / CrewAI / AutoGPT** | A2A-compatible | Register with `supported_protocols: ["A2A"]` |
+| **MiroFish Swarm** | Native connector | Seed injection + God's Eye live context via `/mirofish/pipe` and `/mirofish/gods-eye` |
+| **Anthropic / Perplexity / Slack** | Tool connectors | Configured via `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, `SLACK_API_TOKEN` in `.env` |
+| **Binance / Coinbase / FRED / Reuters** | Trading semantic templates | Standard adapters with pre-defined schemas |
+| **Any custom A2A, MCP, or ACP agent** | Self-registration | `POST /api/v1/register` with protocols, capabilities, and endpoint URL |
+
+---
+
+## Latest Changes (March 2026)
+
+- AI Provider Selection Hub added to TUI (OpenAI, Anthropic, Google, Grok, Perplexity, DeepSeek, Mistral, LLaMA)
+- Automated EAT generation on `/signup`
+- Alembic database migrations replacing manual schema management
+- Self-healing semantic mapping loop (failure -> ML predict -> auto-apply -> retrain)
+- Cryptographic execution proofs on every translation hop
+- Performance-aware Dijkstra routing with dynamic agent weights
+- Transformer-ready NL intent resolver with automated delegation via `POST /api/v1/delegate`
+- Structured observability: Prometheus metrics, Grafana dashboards, TUI debug console
+
+---
+
+## Docs and Links
+
+| Resource | Link |
+| :--- | :--- |
+| Full documentation | [docs.useengram.com](https://docs.useengram.com) |
+| API reference (Swagger) | `http://localhost:8000/docs` (local) |
+| Self-hosting guide | [docs.useengram.com/self-hosting](https://docs.useengram.com/self-hosting) |
+| OpenClaw integration | [docs.useengram.com/integrations/openclaw](https://docs.useengram.com/integrations/openclaw) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Discord | [discord.gg/engram](https://discord.gg/engram) |
 
 ---
 
@@ -103,7 +250,14 @@ flowchart TD
     B -->|"sel-grok"| H["GrokConnectScreen"]
     B -->|"sel-perplexity"| I["PerplexityConnectScreen"]
     B -->|"sel-deepseek"| J["DeepseekConnectScreen"]
-    C & D & E & F & G & H & I & J -->|"POST /credentials"| K["Backend Vault"]
+    C -->|"POST /credentials"| K["Backend Vault"]
+    D -->|"POST /credentials"| K
+    E -->|"POST /credentials"| K
+    F -->|"POST /credentials"| K
+    G -->|"POST /credentials"| K
+    H -->|"POST /credentials"| K
+    I -->|"POST /credentials"| K
+    J -->|"POST /credentials"| K
 ```
 
 Each connection screen inherits from `BaseServiceConnectScreen`, which handles the `POST /credentials` call to the backend and stores the credential locally via `VaultService`. The connection is provider-specific: it sends the `provider_name`, `credential_type` (either `api_key` or `oauth`), and the raw token as encrypted metadata.
