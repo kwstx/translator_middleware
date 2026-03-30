@@ -16,6 +16,9 @@ from uuid import UUID
 from app.core.redis_client import get_redis_client
 
 import bcrypt
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 REVOKED_TOKEN_PREFIX = "revoked_token:"
 
@@ -113,16 +116,28 @@ def _extract_scopes(payload: Dict[str, Any]) -> List[str]:
     return []
 
 def is_token_revoked(jti: str) -> bool:
-    """Checks if a token has been explicitly revoked."""
-    redis = get_redis_client()
-    if not redis or not jti:
+    """
+    Checks if a token has been explicitly revoked.
+    Implements a hybrid fail-mode based on environment and AUTH_FAIL_CLOSED setting.
+    """
+    if not jti:
         return False
+        
+    redis = get_redis_client()
+    if not redis:
+        # middle ground: loud warning, but only block if configured or in production
+        logger.warning("Security Check: Redis unavailable for revocation lookup", jti=jti)
+        if settings.AUTH_FAIL_CLOSED and settings.ENVIRONMENT != "development":
+            return True # Fail-closed (secure)
+        return False # Fail-open (dev-friendly)
+
     try:
         return redis.exists(f"{REVOKED_TOKEN_PREFIX}{jti}") > 0
-    except Exception:
-        # If Redis is unavailable, do not fail auth outright.
-        # This keeps local/dev/test flows working without a live Redis.
-        return False
+    except Exception as exc:
+        logger.error("Redis error during revocation check", error=str(exc), jti=jti)
+        if settings.AUTH_FAIL_CLOSED and settings.ENVIRONMENT != "development":
+            return True # Fail-closed
+        return False # Fail-open
 
 
 def revoke_token(jti: str, expires_in: int):

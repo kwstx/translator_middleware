@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     AUTH_JWT_PUBLIC_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     PROVIDER_CREDENTIALS_ENCRYPTION_KEY: Optional[str] = None
+    AUTH_FAIL_CLOSED: bool = True  # If True, security checks fail-closed when Redis is down.
 
     # Tool Access Connectors
     ANTHROPIC_API_KEY: Optional[str] = None
