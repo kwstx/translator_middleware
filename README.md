@@ -53,14 +53,20 @@ flowchart TB
         API["External APIs<br/>Binance / Coinbase / FRED"]
     end
 
-    AG1 & AG2 & NL & SDK --> AUTH
+    AG1 --> AUTH
+    AG2 --> AUTH
+    NL --> AUTH
+    SDK --> AUTH
     AUTH --> IR
     IR --> PG
     PG --> TE
     TE --> SM
     SM --> TQ
     TQ --> DS
-    DS --> AG3 & MF & TOOL & API
+    DS --> AG3
+    DS --> MF
+    DS --> TOOL
+    DS --> API
 ```
 
 ---
