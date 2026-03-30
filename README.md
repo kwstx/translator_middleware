@@ -46,6 +46,10 @@ Open `http://localhost:8000/docs` for the Swagger UI. The full stack (PostgreSQL
 
 Upgrading? `git pull && docker compose up --build -d`.
 
+<p align="center">
+  <img src="assets/tui_welcome.jpg" alt="Engram TUI Welcome Screen" width="720">
+</p>
+
 ---
 
 ## Quick Start
@@ -110,6 +114,10 @@ curl -X POST http://localhost:8000/api/v1/delegate \
 | **Task queue** | PostgreSQL-backed with lease-based polling, retry up to `TASK_MAX_ATTEMPTS`, dead-letter on exhaustion. |
 | **Real-time TUI** | Textual-based terminal interface. WelcomeScreen, ProviderSelectionScreen, DebugScreen with live task/log/trace tabs. |
 | **Prometheus + Grafana** | `GET /metrics` endpoint. Pre-configured dashboards in `monitoring/grafana/`. |
+
+<p align="center">
+  <img src="assets/tui_dashboard.jpg" alt="Engram TUI Dashboard" width="720">
+</p>
 
 ### Protocol Layer
 
@@ -192,19 +200,6 @@ flowchart TB
 
 ---
 
-## Latest Changes (March 2026)
-
-- AI Provider Selection Hub added to TUI (OpenAI, Anthropic, Google, Grok, Perplexity, DeepSeek, Mistral, LLaMA)
-- Automated EAT generation on `/signup`
-- Alembic database migrations replacing manual schema management
-- Self-healing semantic mapping loop (failure -> ML predict -> auto-apply -> retrain)
-- Cryptographic execution proofs on every translation hop
-- Performance-aware Dijkstra routing with dynamic agent weights
-- Transformer-ready NL intent resolver with automated delegation via `POST /api/v1/delegate`
-- Structured observability: Prometheus metrics, Grafana dashboards, TUI debug console
-
----
-
 ## Docs and Links
 
 | Resource | Link |
@@ -261,6 +256,10 @@ flowchart TD
 ```
 
 Each connection screen inherits from `BaseServiceConnectScreen`, which handles the `POST /credentials` call to the backend and stores the credential locally via `VaultService`. The connection is provider-specific: it sends the `provider_name`, `credential_type` (either `api_key` or `oauth`), and the raw token as encrypted metadata.
+
+<p align="center">
+  <img src="assets/tui_provider_connect.jpg" alt="Engram TUI Provider Connection Screen" width="720">
+</p>
 
 ---
 
@@ -1400,18 +1399,6 @@ The `monitoring/grafana/` directory contains pre-configured dashboard JSON and a
 - Connector call success/failure ratio
 
 Access Grafana at `http://localhost:3001` with the credentials configured in `.env` (`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`, defaults: `admin`/`admin`).
-
----
-
-## Core Features
-
-*   **Protocol Translation:** Converts messages and payloads between A2A, MCP, and ACP formats.
-*   **Semantic Mapping:** Uses OWL ontologies, JSON Schema, and PyDatalog to map data fields between different agent schemas (e.g., mapping `user_info.name` to `profile.fullname`).
-*   **MiroFish Swarm Bridge:** Pipe inter-agent messages and live data directly into a MiroFish swarm simulation and receive compiled prediction reports back.
-*   **Trading Semantic Templates:** Standard adapters for Binance, Coinbase, Robinhood, Kalshi, Stripe, PayPal, and live data feeds (X, FRED, Reuters, Bloomberg).
-*   **Agent Registry & Discovery:** Registration and lookup of agent protocols and semantic capabilities based on computed compatibility scores.
-*   **Async Orchestration:** Task queues and worker processes for multi-turn agent handoffs, message leases, and retries.
-*   **Fallback Mapping:** Machine learning model for field mapping suggestions when default semantic rules are insufficient.
 
 ---
 
