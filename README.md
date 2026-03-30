@@ -554,7 +554,656 @@ sdk = EngramSDK(
 sdk.register_agent()
 ```
 
-Tags are stored as a PostgreSQL `ARRAY` column on the `AgentRegistry` model. There is no predefined tag vocabulary — agents define their own tags during registration, and discovery consumers query against them freely.
+Tags are stored as a PostgreSQL `ARRAY` column on the `AgentRegistry` model. There is no predefined tag vocabulary -- agents define their own tags during registration, and discovery consumers query against them freely.
+
+---
+
+### 11. Near Real-Time Machine Learning Retraining
+
+The ML mapping model (`MappingPredictor` in `app/semantic/ml_mapper.py`) can be retrained on demand or automatically based on accumulated corrections. The retraining function lives in `app/services/ml_retraining.py`.
+
+**How retraining works:**
+
+1. `retrain_mapping_model(session)` queries all `ProtocolMapping` rows from the database.
+2. It calls `MappingPredictor.train_from_mappings(mappings)`, which:
+   - Extracts `(source_protocol, target_protocol, source_field, target_field)` tuples from the `semantic_equivalents` JSONB column on each mapping.
+   - Requires at least `ML_MIN_TRAIN_SAMPLES` (default: 20) training rows and at least 2 distinct target labels.
+   - Builds a scikit-learn `Pipeline` consisting of a `TfidfVectorizer` (char-level, ngram range 3-5) and a `LogisticRegression` classifier (max 1000 iterations).
+3. The trained model is serialized via `joblib.dump()` to `ML_MODEL_PATH` (default: `app/semantic/models/mapping_model.joblib`).
+
+**Automatic retraining trigger:**
+
+When a mapping failure is manually corrected via `correct_mapping_failure()`, the function counts total applied corrections. Every `ML_AUTO_RETRAIN_THRESHOLD` (default: 5) applied corrections, it calls `retrain_mapping_model()` inline. This keeps the model current without requiring a manual trigger.
+
+```mermaid
+flowchart TD
+    A["Developer corrects mapping<br/>POST /beta/mapping-failures/{id}/correct"] --> B["correct_mapping_failure()"]
+    B --> C["Update ProtocolMapping<br/>semantic_equivalents"]
+    C --> D{"applied_count<br/>% ML_AUTO_RETRAIN_THRESHOLD<br/>== 0?"}
+    D -->|Yes| E["retrain_mapping_model()"]
+    D -->|No| F["Return updated entry"]
+    E --> G["MappingPredictor.train_from_mappings()"]
+    G --> H["Pipeline: TfidfVectorizer + LogisticRegression"]
+    H --> I["joblib.dump() to ML_MODEL_PATH"]
+    I --> F
+```
+
+**Manual retraining endpoint:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/beta/ml/retrain \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+Returns `{"status": "success", "message": "ML model retraining initiated."}` on success.
+
+**Configuration:**
+
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `ML_ENABLED` | `true` | Master toggle for ML features |
+| `ML_MODEL_PATH` | `app/semantic/models/mapping_model.joblib` | Filesystem path for the serialized model |
+| `ML_MIN_TRAIN_SAMPLES` | `20` | Minimum `(field, target)` tuples required to train |
+| `ML_AUTO_APPLY_THRESHOLD` | `0.85` | Confidence above which predictions are auto-applied |
+| `ML_AUTO_RETRAIN_THRESHOLD` | `5` | Number of corrections between automatic retrains |
+
+---
+
+### 12. Integration Mapping Failure Correction
+
+When a translation fails (a semantic field cannot be mapped), the system logs the failure to the `MappingFailureLog` table and attempts an ML-assisted correction. This is the self-correcting feedback loop that feeds into the retraining pipeline above.
+
+**Failure logging flow (triggered by `POST /api/v1/beta/translate`):**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as beta/translate
+    participant MF as mapping_failures.py
+    participant ML as MappingPredictor
+    participant DB as PostgreSQL
+
+    Client->>API: POST { source_protocol, target_protocol, payload }
+    API->>API: Translation attempt (raises exception)
+    API->>MF: extract_fields(payload) returns field list
+    loop For each unmapped field
+        MF->>DB: INSERT into MappingFailureLog
+        MF->>ML: predictor.predict(source_protocol, target_protocol, field)
+        ML-->>MF: MappingPrediction { suggestion, confidence }
+        alt confidence >= 0.85
+            MF->>DB: UPDATE ProtocolMapping.semantic_equivalents[field] = suggestion
+            MF->>DB: SET MappingFailureLog.applied = true
+        else confidence < 0.85
+            MF->>DB: SET model_suggestion, model_confidence (not applied)
+        end
+    end
+    API-->>Client: HTTP 422 + mapping_suggestions[]
+```
+
+**Key functions in `app/services/mapping_failures.py`:**
+
+| Function | Purpose |
+| :--- | :--- |
+| `extract_fields(payload, max_fields)` | Recursively walks a nested dict/list and returns up to `max_fields` dotted-path keys (e.g., `user.address.city`) |
+| `extract_payload_excerpt(payload, max_keys)` | Takes the first `max_keys` top-level keys from the payload for logging context |
+| `log_mapping_failure(session, ...)` | Creates a `MappingFailureLog` row with `source_protocol`, `target_protocol`, `source_field`, `payload_excerpt`, and `error_type` |
+| `apply_ml_suggestion(session, entry)` | Loads the ML model, calls `predict()`, and auto-applies if confidence >= `ML_AUTO_APPLY_THRESHOLD` |
+| `correct_mapping_failure(session, id, correct_suggestion)` | Manual correction endpoint -- updates `ProtocolMapping.semantic_equivalents` and optionally triggers retraining |
+
+**Viewing logged failures:**
+
+```bash
+# List all unapplied mapping failures
+curl "http://localhost:8000/api/v1/beta/mapping-failures?applied=false" \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+**Manually correcting a failure:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/beta/mapping-failures/<failure-uuid>/correct \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"correct_suggestion": "profile.full_name"}'
+```
+
+This updates the `ProtocolMapping` row, marks the failure as applied, and may trigger an automatic retrain if the correction count is a multiple of `ML_AUTO_RETRAIN_THRESHOLD`.
+
+---
+
+### 13. Self-Healing Semantic Loop
+
+The three components above (failure logging, ML suggestion, and retraining) form a closed feedback loop. When wired together end-to-end, the system self-corrects semantic mapping gaps without manual intervention for high-confidence predictions.
+
+```mermaid
+flowchart LR
+    A["Translation Attempt"] -->|Fails| B["MappingFailureLog"]
+    B --> C["MappingPredictor.predict()"]
+    C -->|"conf >= 0.85"| D["Auto-apply to<br/>ProtocolMapping"]
+    C -->|"conf < 0.85"| E["Surface as<br/>mapping_suggestion"]
+    E -->|"Developer corrects"| F["correct_mapping_failure()"]
+    F --> D
+    D -->|"Every N corrections"| G["retrain_mapping_model()"]
+    G -->|"Updated model"| C
+```
+
+**The cycle in detail:**
+
+1. A `beta/translate` request fails because field `user_info.name` has no mapping rule for `A2A -> MCP`.
+2. `log_mapping_failure()` persists the failure. `apply_ml_suggestion()` loads the model and predicts `profile.fullname` with confidence `0.91`.
+3. Because `0.91 >= ML_AUTO_APPLY_THRESHOLD (0.85)`, the prediction is written into `ProtocolMapping.semantic_equivalents["user_info.name"] = "profile.fullname"` and `applied = true`.
+4. The next identical translation request succeeds because the mapping now exists.
+5. After 5 total auto-applied or manually corrected failures, `retrain_mapping_model()` fires, incorporating all current mappings into a fresh model. The model improves and can handle new unseen fields with higher accuracy.
+
+No human is required in the loop for predictions above the confidence threshold. Below-threshold predictions are surfaced in the API response as `mapping_suggestions` for manual review and correction.
+
+---
+
+### 14. Verifiable Cryptographic Execution Proofs
+
+Every multi-hop translation produces a chain of SHA-256 hashes that prove the translation was executed and the payloads were not tampered with after the fact. The proof is returned in the `execution_proof` field of `TranslateResponse` and `BetaTranslateResponse`.
+
+**How proofs are generated (`Orchestrator._generate_execution_proof()`):**
+
+For each hop in a multi-hop translation:
+
+```python
+payload_hash = hashlib.sha256(json.dumps({
+    "in": input_payload,
+    "out": output_payload,
+    "src": source_protocol,
+    "tgt": target_protocol,
+    "ts": datetime.now(timezone.utc).isoformat()
+}, sort_keys=True).encode()).hexdigest()
+
+hop_proof = f"v1:sha256:{payload_hash}"
+```
+
+After all hops complete, the per-hop proofs are concatenated and hashed again to produce the aggregate proof:
+
+```python
+aggregate = hashlib.sha256(
+    "".join([hop.proof for hop in hops]).encode()
+).hexdigest()
+
+result.proof = f"v1:agg:{aggregate}"
+```
+
+**Data structures:**
+
+```python
+@dataclass
+class HopResult:
+    source_protocol: str
+    target_protocol: str
+    message_snapshot: Dict[str, Any]  # Payload after this hop's translation
+    weight: float                     # Edge cost used for this hop
+    proof: str                        # "v1:sha256:<hex>"
+
+@dataclass
+class HandoffResult:
+    translated_message: Dict[str, Any]
+    route: List[str]                  # e.g., ["A2A", "MCP", "ACP"]
+    total_weight: float
+    proof: str                        # "v1:agg:<hex>"
+    hops: List[HopResult]
+```
+
+**Example API response with proof:**
+
+```json
+{
+  "status": "completed",
+  "message": "Translated message from agent-a to agent-b",
+  "payload": { "data_bundle": { "action": "thermal_check" } },
+  "execution_proof": "v1:agg:a3f2c98e17b4d..."
+}
+```
+
+The proof format is `v1:agg:<sha256>` for multi-hop translations and `v1:sha256:<sha256>` for single-hop translations. The `v1` prefix is a version tag for future algorithm upgrades.
+
+---
+
+### 15. Hierarchical Multi-Hop Pathfinding
+
+The `ProtocolGraph` (`app/messaging/orchestrator.py`) models all protocol translation capabilities as a weighted directed graph using NetworkX. When no direct translation edge exists between a source and target protocol, the Orchestrator finds the shortest multi-hop path using Dijkstra's algorithm.
+
+**How the graph is built:**
+
+1. On startup, `Orchestrator.__init__()` calls `ProtocolGraph.build_from_translator(translator)` which adds an edge for every `(source, target)` pair registered in `TranslatorEngine._mappers`.
+2. Each connector registered via `connector_registry.list_connectors()` is added as a protocol node.
+3. At runtime, `ProtocolGraph.build_from_registry(session)` can populate the graph dynamically from `ProtocolMapping` and `AgentRegistry` database tables.
+
+**Graph layout (default static edges):**
+
+```
+Nodes: [A2A, MCP, NL, MIROFISH, ANTHROPIC, PERPLEXITY, SLACK, ...]
+Edges:
+  A2A  ---(w=1.0)---> MCP
+  NL   ---(w=1.0)---> MCP
+  (connector nodes added per registered tool)
+```
+
+**Path resolution:**
+
+```python
+path, total_weight = self.protocol_graph.find_shortest_path("A2A", "ACP")
+# path = ["A2A", "MCP", "ACP"]  (if MCP->ACP edge exists)
+# total_weight = 2.0
+```
+
+If no path exists, `HandoffRoutingError` is raised with the message `"No translation route from 'X' to 'Y'."`.
+
+**Multi-hop execution:**
+
+```mermaid
+flowchart LR
+    A["A2A Input"] -->|"Hop 1: w=1.0"| B["MCP"]
+    B -->|"Hop 2: w=1.5"| C["ACP Output"]
+
+    subgraph "Per-Hop Processing"
+        D["TranslatorEngine.translate()"] --> E["Generate hop proof"]
+        E --> F["Record HopResult"]
+    end
+```
+
+Each hop in the path calls `TranslatorEngine.translate()` sequentially. The current message output becomes the next hop's input. Each hop generates a cryptographic proof (see item 14) and records the weight used.
+
+---
+
+### 16. Dynamic Protocol Graph Weighting
+
+Protocol translation edges carry a **weight** value that influences pathfinding. Lower weight means the path is preferred. The `ProtocolGraph.build_from_registry()` method computes weights dynamically from live agent performance data.
+
+**Static weights:**
+
+`build_from_translator()` assigns `default_weight = 1.0` to all edges from `TranslatorEngine._mappers`.
+
+**Dynamic weights (from `build_from_registry()`):**
+
+When the graph is rebuilt from the database (via `handoff_async()` with a `db` parameter), each `ProtocolMapping` row contributes its stored `fidelity_weight` from the database column. For agent-specific edges, the weight is computed as:
+
+```
+total_weight = 1.0 + latency_penalty + reliability_penalty
+```
+
+Where:
+
+| Component | Formula | Interpretation |
+| :--- | :--- | :--- |
+| **Base** | `1.0` | Minimum cost for any edge |
+| **Latency penalty** | `agent.avg_latency * 0.1` | 0.1 points per second of avg response time |
+| **Reliability penalty** | `(1.0 - agent.success_rate) * 50.0` | 5.0 points per 10% drop below 100% success |
+
+**Example:**
+
+An agent with `avg_latency = 2.0s` and `success_rate = 0.90`:
+
+```
+latency_penalty   = 2.0 * 0.1 = 0.2
+reliability_penalty = (1.0 - 0.9) * 50.0 = 5.0
+total_weight       = 1.0 + 0.2 + 5.0 = 6.2
+```
+
+An agent with `avg_latency = 0.5s` and `success_rate = 0.99`:
+
+```
+latency_penalty   = 0.5 * 0.1 = 0.05
+reliability_penalty = (1.0 - 0.99) * 50.0 = 0.5
+total_weight       = 1.0 + 0.05 + 0.5 = 1.55
+```
+
+Dijkstra will prefer the second agent's path because `1.55 < 6.2`.
+
+---
+
+### 17. Performance-Aware Agent Routing
+
+Dynamic weights (item 16) feed into pathfinding (item 15). Combined, the system routes tasks through agents that are fast and reliable, avoiding slow or failing endpoints.
+
+The `AgentRegistry` model stores per-agent performance columns:
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `avg_latency` | `Float` | Rolling average response time in seconds |
+| `success_rate` | `Float` | Success ratio (0.0 to 1.0) |
+| `is_active` | `Boolean` | Set by DiscoveryService heartbeat (item 8) |
+
+`build_from_registry()` creates edges from each protocol node to each agent endpoint node. Dijkstra then selects the lowest-cost path across protocols and agents.
+
+```mermaid
+flowchart LR
+    subgraph "Protocol Nodes"
+        A2A
+        MCP
+    end
+
+    subgraph "Agent Endpoints"
+        AG1["Agent-1<br/>w=1.55"]
+        AG2["Agent-2<br/>w=6.2"]
+    end
+
+    MCP -->|"w=1.55"| AG1
+    MCP -->|"w=6.2"| AG2
+    A2A -->|"w=1.0"| MCP
+```
+
+In this graph, `A2A -> MCP -> Agent-1` has total cost `2.55`, while `A2A -> MCP -> Agent-2` has total cost `7.2`. The Orchestrator routes to Agent-1.
+
+Inactive agents (`is_active = false`) are excluded from the graph entirely during `build_from_registry()`, so they never appear as candidates.
+
+---
+
+### 18. Transformer-Based Natural Language Intent Resolution
+
+The `IntentResolver` (`app/messaging/intent_resolver.py`) decomposes complex, free-form user prompts into normalized `AtomicTask` objects. It is invoked automatically when `source_protocol = "NL"` in the Orchestrator.
+
+**Architecture:**
+
+The resolver is designed with a transformer-ready interface. The current implementation uses a rule-based classifier as the inference layer, structured to be replaced by a fine-tuned transformer (BERT/T5/LLM) without changing the API surface. The `_model_ready` flag is set on initialization.
+
+**Processing pipeline:**
+
+```mermaid
+flowchart TD
+    A["User prompt:<br/>'Please predict the BTC market<br/>and also find agents for weather'"] --> B["_decompose_prompt()"]
+    B -->|"Split by: and, then, also, commas, periods"| C["Segment 1: 'predict the BTC market'<br/>Segment 2: 'find agents for weather'"]
+    C --> D["_parse_segment() per segment"]
+    D --> E["Strip ambient language:<br/>'please', 'can you', 'I want to'"]
+    E --> F["Classify intent via keyword matching"]
+    F --> G["_extract_parameters()"]
+    G --> H["AtomicTask 1: {intent: 'predict', market: 'market', confidence: 0.92}<br/>AtomicTask 2: {intent: 'discover', content: '...', confidence: 0.90}"]
+```
+
+**Intent classification rules:**
+
+| Keywords | Detected Intent | Confidence |
+| :--- | :--- | :--- |
+| `translate`, `convert`, `transform` | `translate` | 0.95 |
+| `predict`, `market`, `price`, `forecast` | `predict` | 0.92 |
+| `status`, `where is`, `progress` | `check_status` | 0.88 |
+| `find`, `discover`, `search`, `who can` | `discover` | 0.90 |
+| (none matched) | `general_query` | 0.50 |
+
+**Capability tag mapping:**
+
+After intent detection, the resolver maps the intent to a registry capability tag, either by querying the `AgentRegistry` for matching `capabilities` or `semantic_tags`, or falling back to a static map:
+
+```python
+{
+    "translate":    "universal_translation",
+    "predict":      "market_forecasting",
+    "check_status": "task_monitoring",
+    "discover":     "agent_discovery",
+}
+```
+
+**Data structures:**
+
+```python
+class AtomicTask(BaseModel):
+    id: str           # UUID
+    intent: str       # e.g., "translate", "predict", "discover"
+    parameters: dict  # Extracted key-value params stripped of ambient language
+    confidence: float # 0.0 to 1.0
+    capability_tag: str  # Matched registry capability
+
+class IntentResolutionResult(BaseModel):
+    original_prompt: str
+    tasks: List[AtomicTask]
+    metadata: dict    # {"segments_processed": N}
+```
+
+---
+
+### 19. Automated Request Delegation
+
+The `DelegationEngine` (`delegation/engine.py`) accepts a natural language command through `POST /api/v1/delegate` and routes it through the full orchestration pipeline without requiring the caller to specify protocols or targets.
+
+**What happens on `POST /api/v1/delegate`:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as POST /delegate
+    participant DE as DelegationEngine
+    participant IR as IntentResolver
+    participant Orch as Orchestrator
+    participant MF as MiroFish Connector
+
+    Client->>API: { command: "predict BTC", source_agent: "Research Agent" }
+    API->>API: Verify EAT authorization
+    API->>DE: delegate_subtask(command, source_agent, eat)
+    DE->>DE: Generate correlation_id (UUID)
+    DE->>DE: Store delegation record in SwarmMemory
+    DE->>Orch: handoff_async(source_protocol="NL", target_protocol="MIROFISH")
+    Orch->>IR: resolve(command)
+    IR-->>Orch: AtomicTask { intent: "predict", capability_tag: "market_forecasting" }
+    Orch->>MF: Execute via connector
+    MF-->>Orch: Simulation result
+    Orch-->>DE: HandoffResult
+    DE->>DE: Push result to TUI event queue
+    DE->>DE: Write completion record to SwarmMemory
+    DE-->>API: { status, correlation_id, result }
+    API-->>Client: JSON response
+```
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/delegate \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"command": "predict the BTC market for next week", "source_agent": "Research Agent"}'
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "correlation_id": "c3d4e5f6-...",
+  "result": {
+    "summary": "Swarm initialized with 1000 agents.",
+    "confidence": 87
+  }
+}
+```
+
+The `DelegationEngine` uses the source protocol `"NL"` and determines the target protocol based on the resolved intent. If the intent is `"predict"`, the target defaults to `"MIROFISH"`. For other intents, it defaults to `"MCP"`. The correlation ID is persisted in the bridge memory backend for traceability.
+
+---
+
+### 20. PyDatalog Rule Synthesis and OWL Ontology Management
+
+The semantic mapping layer operates at two levels: **PyDatalog rules** for explicit field renames, and **OWL ontologies** for concept equivalence resolution. Both are managed through `SemanticMapper` (`app/semantic/mapper.py`).
+
+**PyDatalog Rule Synthesis:**
+
+When `DataSiloResolver()` is called, it loads field mapping rules from either custom rules passed as arguments or (in future) from the database, and asserts them as PyDatalog facts:
+
+```python
+# For each rule { "user_info.name": "profile.fullname" }
++ map_field("user_info.name", "profile.fullname")
+```
+
+During field resolution, the mapper queries PyDatalog first:
+
+```python
+res = map_field("user_info.name", Y)
+# Returns: [("profile.fullname",)]
+```
+
+If no PyDatalog rule matches, it falls back to the OWL ontology.
+
+**OWL Ontology Management:**
+
+The bundled ontology (`app/semantic/protocols.owl`) defines concept equivalences in RDF/OWL format:
+
+```xml
+<!-- A2A:task_handoff is equivalent to MCP:coord_transfer -->
+<owl:Class rdf:about="http://agent.middleware.org/A2A#task_handoff">
+    <owl:equivalentClass rdf:resource="http://agent.middleware.org/MCP#coord_transfer"/>
+</owl:Class>
+```
+
+The `SemanticMapper` loads this via `owlready2` and resolves equivalents by:
+
+1. Searching for the concept IRI in the source protocol's namespace.
+2. Walking `equivalent_to` relationships.
+3. Returning the first equivalent found in a different protocol's namespace.
+
+Results are cached in Redis with key pattern `semantic:equivalent:<protocol>:<concept>` and TTL of `SEMANTIC_CACHE_TTL_SECONDS` (default: 600s).
+
+**Runtime ontology upload via API:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ontology/upload \
+  -H "Content-Type: application/json" \
+  -d '{"name": "custom_mappings", "rdf_xml": "<rdf:RDF ...>...</rdf:RDF>"}'
+```
+
+This persists the ontology to the `SemanticOntology` table and loads it into the in-memory `rdflib.Graph` managed by `OntologyManager` (`app/semantic/ontology_manager.py`). The `OntologyManager` supports:
+
+| Method | Purpose |
+| :--- | :--- |
+| `load_ontology(source, format)` | Parse RDF from file path or string |
+| `add_mapping(source_term, target_term)` | Add an `owl:sameAs` triple programmatically |
+| `resolve_mapping(source_term)` | Return all terms linked via `owl:sameAs` |
+| `get_rdf_xml()` | Serialize the current graph back to RDF/XML |
+
+**Resolution order:**
+
+```mermaid
+flowchart TD
+    A["Source field: user_info.name"] --> B{"PyDatalog rule<br/>exists?"}
+    B -->|Yes| C["Return rule target"]
+    B -->|No| D{"OWL ontology<br/>equivalent?"}
+    D -->|Yes| E["Return ontology target"]
+    D -->|No| F{"ML model<br/>prediction?"}
+    F -->|"conf >= 0.85"| G["Auto-apply prediction"]
+    F -->|"conf < 0.85"| H["Pass through unchanged<br/>+ log to MappingFailureLog"]
+```
+
+---
+
+### 21. Automated Schema Inference
+
+The `DataSiloResolver` method on `SemanticMapper` validates source data against JSON Schema before translation, flattens nested structures, and infers mapping targets through the resolution chain described above. This constitutes the automated schema inference pipeline.
+
+**Processing steps:**
+
+1. **JSON Schema Validation** -- `jsonschema.validate(instance=source_data, schema=source_schema)` validates the incoming payload against the declared source schema. If validation fails, a `ValueError` is raised with the specific schema violation.
+
+2. **Deep Flattening** -- `_flatten_dict()` recursively converts nested dicts into dotted-path keys:
+
+```python
+# Input
+{"user": {"address": {"city": "NYC"}}}
+
+# Output
+{"user.address.city": "NYC"}
+```
+
+3. **Rule-Based Mapping** -- Each flattened key is passed through the PyDatalog rules, then the OWL ontology, in order.
+
+4. **Schema-Aware Reconstruction** -- The mapped keys are assembled into a new dict structure compatible with the target schema.
+
+**Example:**
+
+```python
+mapper = SemanticMapper("app/semantic/protocols.owl")
+
+result = mapper.DataSiloResolver(
+    source_data={"user_info": {"name": "Alice", "email": "a@b.com"}},
+    source_schema={
+        "type": "object",
+        "properties": {
+            "user_info": {"type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "email": {"type": "string"}
+                }
+            }
+        }
+    },
+    target_schema={
+        "type": "object",
+        "properties": {
+            "profile": {"type": "object",
+                "properties": {
+                    "fullname": {"type": "string"},
+                    "email": {"type": "string"}
+                }
+            }
+        }
+    },
+    source_protocol="A2A",
+    target_protocol="MCP",
+    custom_rules={"user_info.name": "profile.fullname"},
+)
+
+# result: {"profile.fullname": "Alice", "email": "a@b.com"}
+```
+
+---
+
+### 22. Structured Observability Dashboards
+
+The system exposes Prometheus metrics at `GET /metrics` via `prometheus-fastapi-instrumentator`. These metrics are scraped by the Prometheus container and visualized in pre-provisioned Grafana dashboards.
+
+**Prometheus metrics defined in `app/core/metrics.py`:**
+
+| Metric | Type | Labels | Description |
+| :--- | :--- | :--- | :--- |
+| `translations_total` | Counter | `channel`, `source_protocol`, `target_protocol` | Total completed translations |
+| `translation_errors_total` | Counter | `channel`, `source_protocol`, `target_protocol` | Total translation errors |
+| `translations_per_second` | Gauge | `channel` | Rolling translations/sec over 60s window |
+| `translation_error_rate` | Gauge | `channel` | Rolling error rate (0-1) over 60s window |
+| `tasks_started_total` | Counter | `task_type`, `user_id` | Total tasks started |
+| `tasks_completed_total` | Counter | `task_type`, `user_id`, `status` | Total tasks completed (by status) |
+| `task_latency_seconds` | Histogram | `task_type`, `user_id` | Task execution latency (buckets: 0.1s to 60s) |
+| `connector_calls_total` | Counter | `connector`, `user_id`, `status` | Total connector invocations |
+| `connector_latency_seconds` | Histogram | `connector`, `user_id` | Connector call latency (buckets: 0.1s to 20s) |
+
+**Rolling rate calculation:**
+
+`translations_per_second` and `translation_error_rate` use a 60-second sliding window implemented with a `deque`. On each translation event, expired entries (older than 60s) are evicted, and the gauge is recalculated:
+
+```python
+translations_per_second = len(success_events) / 60
+error_rate = len(error_events) / (len(success_events) + len(error_events))
+```
+
+**Live task monitoring via execution events:**
+
+The `emit_execution_event()` function (`app/core/execution_events.py`) pushes structured events to both the TUI event queue and the `TaskEvent` database table. Each event contains:
+
+```python
+{
+    "type": "translation.engram",    # Event category
+    "message": "Hop 1: Translating A2A to MCP",
+    "data": {"payload": {...}},       # Full payload snapshot
+    "task_id": "uuid-...",
+    "level": "info",
+    "ts": 1711828800.0                # Unix timestamp
+}
+```
+
+These events are consumed by:
+- The TUI `RichLog` panels via `tui_event_queue` (in-process, real-time).
+- Remote CLI clients via `GET /api/v1/tasks/{task_id}/events` (database-backed, polled).
+
+**Grafana dashboard provisioning:**
+
+The `monitoring/grafana/` directory contains pre-configured dashboard JSON and a datasource provisioning file. When the Docker Compose stack starts, Grafana auto-loads these dashboards, providing out-of-the-box panels for:
+
+- Translation throughput (translations/sec by channel)
+- Error rate over time
+- Task latency distribution (p50, p95, p99)
+- Connector call success/failure ratio
+
+Access Grafana at `http://localhost:3001` with the credentials configured in `.env` (`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`, defaults: `admin`/`admin`).
 
 ---
 
