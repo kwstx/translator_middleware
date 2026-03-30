@@ -105,6 +105,18 @@ class DiscoveryService:
                         logger.info(
                             "DiscoveryService: Agent health statuses committed to registry."
                         )
+
+                        # Recalculate and update reliability metrics for any active agents.
+                        # This enables real-time weighted Dijkstra routing in the Orchestrator.
+                        try:
+                            await self.update_agent_metrics(session)
+                            logger.info(
+                                "DiscoveryService: Reliability metrics updated for agents."
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"DiscoveryService: Failed to update agent metrics: {str(e)}"
+                            )
                     else:
                         logger.debug(
                             "DiscoveryService: No agents registered for discovery."
@@ -182,6 +194,60 @@ class DiscoveryService:
                 agent_id=str(agent.agent_id),
                 status=status_label,
             )
+
+    # ------------------------------------------------------------------
+    # Performance Monitoring
+    # ------------------------------------------------------------------
+
+    async def update_agent_metrics(self, session: AsyncSession):
+        """
+        Recalculates avg_latency and success_rate for all active agents
+        based on historical AgentMessage logs.
+        """
+        from app.db.models import AgentMessage, AgentMessageStatus
+        from sqlalchemy import func
+        
+        logger.info("DiscoveryService: Updating agent performance metrics from logs.")
+        
+        # 1. Fetch all agents
+        query = select(AgentRegistry)
+        result = await session.execute(query)
+        agents = result.scalars().all()
+        
+        for agent in agents:
+            # Calculate Success Rate
+            # We look at messages in the last 24h or similar? 
+            # For now, let's just take all historical data or a reasonable window.
+            msg_query = select(AgentMessage).where(AgentMessage.agent_id == agent.agent_id)
+            msg_result = await session.execute(msg_query)
+            messages = msg_result.scalars().all()
+            
+            if not messages:
+                continue
+                
+            total = len(messages)
+            acked = len([m for m in messages if m.status == AgentMessageStatus.ACKED])
+            agent.success_rate = acked / total
+            
+            # Calculate Latency (only for ACKED messages)
+            latencies = []
+            for m in messages:
+                if m.status == AgentMessageStatus.ACKED and m.acked_at and m.created_at:
+                    diff = (m.acked_at - m.created_at).total_seconds()
+                    latencies.append(max(0, diff))
+            
+            if latencies:
+                agent.avg_latency = sum(latencies) / len(latencies)
+            
+            session.add(agent)
+            logger.debug(
+                "Agent metrics updated", 
+                agent_id=str(agent.agent_id), 
+                success_rate=round(agent.success_rate, 2),
+                avg_latency=round(agent.avg_latency, 3)
+            )
+            
+        await session.commit()
 
     # ------------------------------------------------------------------
     # Collaboration Matching

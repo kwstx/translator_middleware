@@ -41,6 +41,8 @@ class ProtocolMapping(SQLModel, table=True):
         default={}, 
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
+    fidelity_weight: float = Field(default=1.0, nullable=False) # Lower is better, represents data preservation
+
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),
@@ -102,6 +104,8 @@ class AgentRegistry(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True)),
     )
     is_active: bool = Field(default=True)
+    avg_latency: float = Field(default=0.0, nullable=False) # In seconds
+    success_rate: float = Field(default=1.0, nullable=False) # 0.0 to 1.0
     
     tools: List["ToolRegistry"] = Relationship(
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
