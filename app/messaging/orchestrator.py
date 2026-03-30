@@ -11,6 +11,7 @@ from app.core.security import verify_engram_token
 from app.messaging.connectors.registry import get_default_registry
 from app.core.logging import bind_context
 from app.core.execution_events import emit_execution_event
+from app.messaging.intent_resolver import IntentResolver, IntentResolutionResult, AtomicTask
 
 logger = structlog.get_logger(__name__)
 
@@ -190,6 +191,9 @@ class Orchestrator:
 
         # Build the graph from the translator's registered pairs
         self.protocol_graph.build_from_translator(self.translator)
+        
+        # NEW: Sophisticated Intent Resolution Layer
+        self.intent_resolver = IntentResolver()
         
         # Initialize Tool Connectors
         self.connector_registry = get_default_registry()
@@ -502,6 +506,49 @@ class Orchestrator:
                     total_weight=0.0
                 )
 
+        # NEW: If source_protocol is NL, we first resolve the complex intent
+        # to decompose into atomic tasks before standard handoff.
+        if src == "NL":
+            logger.info("Decomposing NL command into atomic tasks.", prompt=source_message.get("command"))
+            resolution: IntentResolutionResult = await self.intent_resolver.resolve(
+                source_message.get("command", ""), db=db
+            )
+            
+            if resolution.tasks:
+                # We'll handle the first task for now in this handoff_async call
+                # But could also queue multiple tasks or handle them sequentially
+                primary_task: AtomicTask = resolution.tasks[0]
+                logger.info(
+                    "Primary task extracted", 
+                    intent=primary_task.intent, 
+                    capability=primary_task.capability_tag, 
+                    params=primary_task.parameters
+                )
+                
+                # Strip ambient language from payload and update with extracted params
+                # This prevents "downstream payload pollution"
+                new_payload = {
+                     "intent": primary_task.intent,
+                     "capability_tag": primary_task.capability_tag,
+                     **primary_task.parameters
+                }
+                
+                # Check for metadata/context from original message
+                if "metadata" in source_message:
+                     new_payload["metadata"] = source_message["metadata"]
+                
+                # Route based on the extracted intent and target protocol
+                # If target protocol is not specified, we can try to guess from the task
+                resolved_target = target_protocol
+                if not resolved_target or resolved_target == "AUTO":
+                    # Simple heuristic: 'predict' -> MiroFish
+                    if primary_task.intent == "predict":
+                        resolved_target = "MIROFISH"
+                    else:
+                        resolved_target = "MCP" # Default bridging protocol
+                
+                return await self.handoff(new_payload, "NL", resolved_target, eat)
+            
         # Delegate standard handoff to the sync implementation
         return await self.handoff(source_message, source_protocol, target_protocol, eat)
 

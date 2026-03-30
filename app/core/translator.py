@@ -4,6 +4,7 @@ import copy
 import structlog
 from app.core.exceptions import ProtocolMismatchError, TranslationError
 from app.core.metrics import record_translation_error, record_translation_success
+from app.messaging.intent_resolver import IntentResolver
 
 logger = structlog.get_logger(__name__)
 
@@ -32,6 +33,7 @@ class TranslatorEngine:
         self._delta_mappings: Dict[str, Dict[Tuple[str, str], Dict[str, Any]]] = (
             delta_mappings or {}
         )
+        self.intent_resolver = IntentResolver()
 
     @property
     def supported_pairs(self) -> list[tuple[str, str]]:
@@ -322,24 +324,32 @@ class TranslatorEngine:
     def _translate_nl_to_mcp(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """
         Translates a Natural Language (NL) command into structured MCP.
-        Simple rule-based mapping for demonstration of 'intent detection'.
+        Uses the IntentResolver for sophisticated prompt decomposition.
         """
-        cmd = message.get("command", "").lower()
-        translated = {"coord": "research"} # Default
+        cmd = message.get("command")
+        if not cmd and "intent" in message:
+             # Already cleaned by Orchestrator
+             return message
+             
+        # Resolve intent synchronously
+        resolution = self.intent_resolver.resolve_sync(cmd or "")
         
-        if "predict" in cmd or "market" in cmd or "price" in cmd:
-            translated["intent"] = "predict"
-            translated["content"] = message.get("command")
-        elif "status" in cmd:
-            translated["intent"] = "check_status"
-        else:
-            translated["intent"] = "general_query"
-            translated["content"] = message.get("command")
-            
-        # Add metadata if present
+        if not resolution.tasks:
+             return {"intent": "general_query", "content": cmd, "coord": "research"}
+             
+        # Map primary task to MCP structure
+        primary = resolution.tasks[0]
+        translated = {
+             "intent": primary.intent,
+             "capability_tag": primary.capability_tag,
+             "coord": "research", # Default MCP coord
+             **primary.parameters
+        }
+        
+        # Preserve metadata
         if "metadata" in message:
-            translated["metadata"] = self._process_value(message["metadata"])
-            
+             translated["metadata"] = self._process_value(message["metadata"])
+             
         return translated
 
     def _process_value(self, value: Any) -> Any:
