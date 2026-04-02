@@ -128,15 +128,21 @@ flowchart TB
 
 ---
 
-## Already Works With
+## Works With Anything
 
-| Integration | How to connect |
-| :--- | :--- |
-| **Claude Code / Cursor** | Register with `supported_protocols: ["MCP"]` |
-| **LangGraph / CrewAI / AutoGPT** | Register with `supported_protocols: ["A2A"]` |
-| **MiroFish Swarm** | Native bridge — seed injection + God's Eye live context |
-| **Binance / Coinbase / Kalshi / Stripe** | Trading semantic templates with unified schemas |
-| **Any A2A, MCP, or ACP agent** | `POST /api/v1/register` with protocols, capabilities, endpoint |
+Any agent, tool, or API that speaks A2A, MCP, or ACP — register once and Engram handles the rest. No adapters, no glue code.
+
+```bash
+# MCP agent? One call.
+curl -X POST http://localhost:8000/api/v1/register \
+  -d '{"agent_id": "my-agent", "supported_protocols": ["MCP"], "endpoint_url": "http://my-agent:9000"}'
+
+# A2A agent? Same call.
+curl -X POST http://localhost:8000/api/v1/register \
+  -d '{"agent_id": "other-agent", "supported_protocols": ["A2A"], "endpoint_url": "http://other-agent:8080"}'
+```
+
+If it has an endpoint and speaks a supported protocol, it works.
 
 ---
 
