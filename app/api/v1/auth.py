@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from uuid import UUID
 
 from app.db.session import get_session
@@ -10,10 +10,10 @@ from app.core.security import (
     get_password_hash, 
     verify_password, 
     create_access_token, 
-    create_engram_access_token,
     get_current_principal,
     revoke_token
 )
+from app.services.eat_identity import EATIdentityService
 from datetime import timedelta
 from app.services.session import SessionService
 from pydantic import BaseModel, EmailStr
@@ -44,6 +44,22 @@ class SignupResult(BaseModel):
     access_token: str
     token_type: str = "bearer"
     eat: Optional[str] = None
+    eat_refresh_token: Optional[str] = None
+    eat_expires_at: Optional[str] = None
+
+class EATTokenRequest(BaseModel):
+    semantic_scopes: Optional[List[str]] = None
+    expires_minutes: Optional[int] = None
+    refresh_expires_minutes: Optional[int] = None
+
+class EATTokenResponse(BaseModel):
+    eat: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_at: str
+
+class EATRefreshRequest(BaseModel):
+    refresh_token: str
 
 @router.post("/signup", response_model=SignupResult, status_code=status.HTTP_201_CREATED)
 async def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_session)):
@@ -101,12 +117,18 @@ async def signup(request: Request, user_in: UserCreate, db: Session = Depends(ge
         }
     )
     
-    # Generate an initial long-lived EAT (30 days default) automatically
-    eat = create_engram_access_token(
+    eat_result = EATIdentityService.issue_token(
+        db=db,
         user_id=str(db_obj.id),
         permissions=default_permissions,
-        expires_delta=timedelta(days=30)
+        semantic_scopes=["execute:tool-invocation"],
+        metadata={
+            "event": "auto_signup_login",
+            "user_agent": request.headers.get("user-agent", "unknown"),
+            "ip_address": request.client.host if request.client else "unknown"
+        }
     )
+    await db.commit()
     
     bind_context(user_id=str(db_obj.id), session_id=session_id)
     logger.info("Signup and auto-authentication successful", user_id=str(db_obj.id), session_id=session_id)
@@ -115,7 +137,9 @@ async def signup(request: Request, user_in: UserCreate, db: Session = Depends(ge
         "user": db_obj,
         "access_token": access_token,
         "token_type": "bearer",
-        "eat": eat
+        "eat": eat_result.token,
+        "eat_refresh_token": eat_result.refresh_token,
+        "eat_expires_at": eat_result.expires_at.isoformat()
     }
 
 @router.post("/login", response_model=Token)
@@ -195,11 +219,11 @@ async def list_sessions(principal: Dict[str, Any] = Depends(get_current_principa
     return sessions
 
 
-@router.post("/tokens/generate-eat", response_model=Dict[str, str])
+@router.post("/tokens/generate-eat", response_model=EATTokenResponse)
 async def generate_eat(
     db: Session = Depends(get_session),
     principal: Dict[str, Any] = Depends(get_current_principal),
-    expires_days: Optional[int] = 30
+    request: EATTokenRequest = None
 ):
     """
     Generates a long-lived Engram Access Token (EAT) for external agent access.
@@ -213,18 +237,64 @@ async def generate_eat(
     if not profile:
         raise HTTPException(status_code=404, detail="Permission profile not found")
         
-    eat = create_engram_access_token(
+    request = request or EATTokenRequest()
+    expires_delta = timedelta(minutes=request.expires_minutes) if request.expires_minutes else None
+    refresh_delta = timedelta(minutes=request.refresh_expires_minutes) if request.refresh_expires_minutes else None
+    eat_result = EATIdentityService.issue_token(
+        db=db,
         user_id=user_id,
         permissions=profile.permissions,
-        expires_delta=timedelta(days=expires_days)
+        semantic_scopes=request.semantic_scopes or ["execute:tool-invocation"],
+        expires_delta=expires_delta,
+        refresh_expires_delta=refresh_delta,
+        metadata={"event": "manual_generate"}
     )
+    await db.commit()
     bind_context(user_id=str(user_id))
-    logger.info("EAT generated", user_id=str(user_id), expires_days=expires_days)
-    return {"eat": eat, "token_type": "bearer"}
+    logger.info("EAT generated", user_id=str(user_id))
+    return {
+        "eat": eat_result.token,
+        "refresh_token": eat_result.refresh_token,
+        "token_type": "bearer",
+        "expires_at": eat_result.expires_at.isoformat()
+    }
+
+@router.post("/tokens/refresh-eat", response_model=EATTokenResponse)
+async def refresh_eat(
+    request: EATRefreshRequest,
+    db: Session = Depends(get_session),
+    principal: Dict[str, Any] = Depends(get_current_principal),
+):
+    user_id = principal.get("sub")
+    statement = select(PermissionProfile).where(PermissionProfile.user_id == UUID(user_id))
+    result = await db.execute(statement)
+    profile = result.scalars().first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Permission profile not found")
+    try:
+        eat_result = EATIdentityService.refresh_token(
+            db=db,
+            refresh_token=request.refresh_token,
+            permissions=profile.permissions,
+            semantic_scopes=["execute:tool-invocation"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    bind_context(user_id=str(user_id))
+    logger.info("EAT refreshed", user_id=str(user_id))
+    return {
+        "eat": eat_result.token,
+        "refresh_token": eat_result.refresh_token,
+        "token_type": "bearer",
+        "expires_at": eat_result.expires_at.isoformat()
+    }
 @router.post("/tokens/revoke-eat")
 async def revoke_eat(
     token_to_revoke: str,
-    principal: Dict[str, Any] = Depends(get_current_principal)
+    refresh_token: Optional[str] = None,
+    principal: Dict[str, Any] = Depends(get_current_principal),
+    db: Session = Depends(get_session)
 ):
     """
     Revokes a specific Engram Access Token.
@@ -256,7 +326,15 @@ async def revoke_eat(
     if jti and exp:
         import time
         expires_in = max(1, exp - int(time.time()))
-        revoke_token(jti, expires_in)
+        EATIdentityService.revoke_eat(
+            db=db,
+            user_id=str(principal.get("sub")),
+            token=token_to_revoke,
+            jti=jti,
+            expires_in=expires_in,
+            refresh_token=refresh_token,
+        )
+        await db.commit()
     bind_context(user_id=str(principal.get("sub")))
     logger.info("EAT revoked", user_id=str(principal.get("sub")), jti=jti)
     return {"detail": "Token successfully revoked"}

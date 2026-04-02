@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xml:base="http://engram.ai/ontology/base.owl"
+         xmlns="http://engram.ai/ontology/base.owl#">
+
+<owl:Ontology rdf:about="http://engram.ai/ontology/base.owl"/>
+
+<owl:Class rdf:about="#Concept">
+  <rdfs:subClassOf rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Entity">
+  <rdfs:subClassOf rdf:resource="#Concept"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Field">
+  <rdfs:subClassOf rdf:resource="#Concept"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Operation">
+  <rdfs:subClassOf rdf:resource="#Concept"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Customer">
+  <rdfs:subClassOf rdf:resource="#Entity"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Order">
+  <rdfs:subClassOf rdf:resource="#Entity"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Product">
+  <rdfs:subClassOf rdf:resource="#Entity"/>
+</owl:Class>
+
+<owl:Class rdf:about="#email">
+  <rdfs:subClassOf rdf:resource="#Field"/>
+</owl:Class>
+
+<owl:Class rdf:about="#customer_id">
+  <rdfs:subClassOf rdf:resource="#Field"/>
+</owl:Class>
+
+<owl:Class rdf:about="#first_name">
+  <rdfs:subClassOf rdf:resource="#Field"/>
+</owl:Class>
+
+<owl:Class rdf:about="#last_name">
+  <rdfs:subClassOf rdf:resource="#Field"/>
+</owl:Class>
+
+<owl:Class rdf:about="#phone">
+  <rdfs:subClassOf rdf:resource="#Field"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Create">
+  <rdfs:subClassOf rdf:resource="#Operation"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Update">
+  <rdfs:subClassOf rdf:resource="#Operation"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Delete">
+  <rdfs:subClassOf rdf:resource="#Operation"/>
+</owl:Class>
+
+<owl:Class rdf:about="#Get">
+  <rdfs:subClassOf rdf:resource="#Operation"/>
+</owl:Class>
+
+
+</rdf:RDF>

@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlmodel import Session, select
 import structlog
 from app.db.session import get_session
-from app.core.security import get_current_principal
+from app.core.security import get_current_principal, verify_engram_token
+from app.core.semantic_auth import SemanticAuthorizationService
+import subprocess
 from app.db.models import ToolRegistry, ToolExecutionMetadata, ExecutionType, AgentRegistry
 from app.services.registry_service import RegistryService
 
@@ -108,6 +110,16 @@ async def run_cli_execution(tool: ToolRegistry, metadata: ToolExecutionMetadata,
     """
     Execute a CLI command in a secure subprocess.
     """
+    try:
+        token = principal.get("_raw_token")
+        if not token:
+            return {"jsonrpc": "2.0", "error": {"code": -32001, "message": "Missing EAT token."}}
+        payload = verify_engram_token(token)
+        authz = SemanticAuthorizationService()
+        args = authz.enforce(payload, tool, action, args)
+    except HTTPException as exc:
+        return {"jsonrpc": "2.0", "error": {"code": -32001, "message": exc.detail}}
+
     # CLI Command construction
     cmd_base = metadata.metadata.get("cli_command", tool.name)
     # Inject auth env vars from principal/EAT
@@ -132,6 +144,15 @@ async def run_cli_execution(tool: ToolRegistry, metadata: ToolExecutionMetadata,
         return {"jsonrpc": "2.0", "error": {"code": -32000, "message": str(e)}}
 
 async def run_http_execution(tool: ToolRegistry, metadata: ToolExecutionMetadata, action: str, args: Dict[str, Any], principal: Dict[str, Any]):
+    try:
+        token = principal.get("_raw_token")
+        if not token:
+            return {"jsonrpc": "2.0", "error": {"code": -32001, "message": "Missing EAT token."}}
+        payload = verify_engram_token(token)
+        authz = SemanticAuthorizationService()
+        _ = authz.enforce(payload, tool, action, args)
+    except HTTPException as exc:
+        return {"jsonrpc": "2.0", "error": {"code": -32001, "message": exc.detail}}
     # HTTP orchestration
     return {"jsonrpc": "2.0", "result": {"message": "HTTP tool call routed (mock result)"}}
 

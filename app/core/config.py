@@ -109,8 +109,12 @@ class Settings(BaseSettings):
     AUTH_JWT_SECRET: Optional[str] = None
     AUTH_JWT_PUBLIC_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    EAT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # short-lived by default
+    EAT_REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     PROVIDER_CREDENTIALS_ENCRYPTION_KEY: Optional[str] = None
     AUTH_FAIL_CLOSED: bool = True  # If True, security checks fail-closed when Redis is down.
+    SEMANTIC_SCOPE_ONTOLOGY_PATH: str = "app/semantic/security.owl"
+    SEMANTIC_AUTH_FAIL_CLOSED: bool = True
 
     # Tool Access Connectors
     ANTHROPIC_API_KEY: Optional[str] = None

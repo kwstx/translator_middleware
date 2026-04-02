@@ -60,6 +60,7 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
 def create_engram_access_token(
     user_id: str,
     permissions: Dict[str, List[str]],
+    semantic_scopes: Optional[List[str]] = None,
     expires_delta: Optional[timedelta] = None
 ) -> str:
     """
@@ -78,7 +79,8 @@ def create_engram_access_token(
         "type": "EAT",
         "allowed_tools": allowed_tools,
         "scopes": permissions,
-        "scope": " ".join(sorted(list(all_scopes)))
+        "scope": " ".join(sorted(list(all_scopes))),
+        "semantic_scopes": semantic_scopes or []
     }
     return create_access_token(data, expires_delta)
 

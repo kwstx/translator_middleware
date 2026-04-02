@@ -492,7 +492,8 @@ async def playground_translate_message(
         # Playground uses a guest token with broad translator permissions
         guest_eat = create_engram_access_token(
             user_id="playground-guest",
-            permissions={"translator": ["*"]}
+            permissions={"translator": ["*"]},
+            semantic_scopes=["execute:tool-invocation"]
         )
         
         route_result = await routeTo(

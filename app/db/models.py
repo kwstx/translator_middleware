@@ -29,9 +29,7 @@ class ProtocolMapping(SQLModel, table=True):
     __tablename__ = "protocol_mapping"
     
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    source_protocol: ProtocolType = Field(
-        sa_column=Column(Enum(ProtocolType), index=True, nullable=False)
-    )
+    source_protocol: ProtocolType = Field(index=True, nullable=False)
     target_protocol: str = Field(nullable=False)
     mapping_rules: Dict[str, Any] = Field(
         default={}, 
@@ -42,7 +40,9 @@ class ProtocolMapping(SQLModel, table=True):
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
     fidelity_weight: float = Field(default=1.0, nullable=False) # Lower is better, represents data preservation
-
+    version: int = Field(default=1, nullable=False)
+    is_active: bool = Field(default=True, nullable=False)
+    
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),
@@ -187,7 +187,7 @@ class ToolExecutionMetadata(SQLModel, table=True):
     )
     
     # Stores spec (OpenAPI/GraphQL), CLI wrapper info, or MCP details
-    metadata: Dict[str, Any] = Field(
+    exec_params: Dict[str, Any] = Field(
         default={},
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
@@ -496,4 +496,45 @@ class ProviderCredential(SQLModel, table=True):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc)),
+    )
+
+
+class TokenAuditEvent(str, enum.Enum):
+    ISSUED = "ISSUED"
+    REFRESHED = "REFRESHED"
+    REVOKED = "REVOKED"
+
+
+class TokenAuditLog(SQLModel, table=True):
+    __tablename__ = "token_audit_logs"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False)
+    )
+    token_type: str = Field(index=True, nullable=False)
+    event_type: TokenAuditEvent = Field(
+        sa_column=Column(Enum(TokenAuditEvent), index=True, nullable=False)
+    )
+    jti: Optional[str] = Field(default=None, index=True)
+    token_hash: str = Field(nullable=False)
+    issued_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    expires_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    scopes: Dict[str, Any] = Field(
+        default={},
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
+    )
+    semantic_scopes: List[str] = Field(
+        default=[],
+        sa_column=Column(ARRAY(String))
+    )
+    metadata: Dict[str, Any] = Field(
+        default={},
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"))
     )
