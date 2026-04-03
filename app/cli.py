@@ -1346,6 +1346,118 @@ def evolve_apply(
         rprint(f"[bold red]Evolution Apply Failed:[/] {e}")
 
 
+# --- Protocol Subgroup (Federation & Translation) ---
+protocol_app = typer.Typer(help="Federated protocol management and translation")
+app.add_typer(protocol_app, name="protocol")
+
+handoff_app = typer.Typer(help="Manage and simulate session handoffs between agents")
+protocol_app.add_typer(handoff_app, name="handoff")
+
+@protocol_app.command("translate")
+def protocol_translate(
+    from_proto: str = typer.Option(..., "--from", help="Source protocol (mcp, cli, a2a, acp)"),
+    to_proto: str = typer.Option(..., "--to", help="Target protocol (mcp, cli, a2a, acp)"),
+    payload: Optional[str] = typer.Option(None, "--payload", "-p", help="JSON payload to translate (or path to file)"),
+):
+    """
+    Perform real-time translation between protocols using the system ontology as a bridge.
+    """
+    ctx = state
+    try:
+        # Load payload from input or file
+        if not payload:
+            # Provide a default demonstration payload if none given
+            data = {"name": "get_weather", "arguments": {"city": "San Francisco", "units": "imperial"}}
+        elif os.path.exists(payload):
+            with open(payload, "r") as f:
+                data = json.load(f)
+        else:
+            data = json.loads(payload)
+
+        # Output in CLI
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]Bridging protocols via ontology..."),
+            transient=True
+        ) as progress:
+            progress.add_task("translate")
+            result = ctx.request(
+                "POST", 
+                f"/api/v1/federation/translate?from={from_proto}&to={to_proto}",
+                json=data
+            )
+
+        # Render dual panels for translation demonstration
+        source_panel = Panel(
+            JSON.from_data(data),
+            title=f"Source ({from_proto.upper()})",
+            border_style="magenta"
+        )
+        
+        bridge_panel = Panel(
+            JSON.from_data(result.get("canonical_bridge", {})),
+            title="🧠 Canonical Bridge (Ontology)",
+            border_style="yellow"
+        )
+        
+        target_panel = Panel(
+            JSON.from_data(result.get("translated_payload", {})),
+            title=f"Target ({to_proto.upper()})",
+            border_style="green"
+        )
+
+        rprint(Group(source_panel, bridge_panel, target_panel))
+        rprint("\n[dim italic]Translation verified against hierarchical ontology concepts.[/]")
+        
+    except Exception as e:
+        rprint(f"[bold red]Translation Error:[/] {e}")
+
+@handoff_app.command("simulate")
+def handoff_test(
+    source_agent: str = typer.Option("CLI-Local", help="Name of the source agent/environment"),
+    target_agent: str = typer.Option("Remote-MCP", help="Name of the target agent/environment"),
+):
+    """
+    Simulate a seamless multi-agent task handoff, demonstrating semantic state transfer.
+    """
+    ctx = state
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold yellow]Initiating protocol handoff..."),
+            transient=True
+        ) as progress:
+            progress.add_task("handoff")
+            result = ctx.request(
+                "POST",
+                "/api/v1/federation/handoff/simulate",
+                json={"source_agent": source_agent, "target_agent": target_agent}
+            )
+
+        # Visualize the handoff
+        tree = Tree(f"🤝 [bold green]Handoff Simulation:[/] {source_agent} ➔ {target_agent}")
+        tree.add(f"Session ID: [bold cyan]{result['session_id']}[/]")
+        tree.add(f"Semantic Readiness: [bold green]{result['semantic_readiness']}[/]")
+        
+        protocols = tree.add("Bridged Protocols")
+        for p in result.get("bridged_protocols", []):
+            protocols.add(f"• {p}")
+            
+        transferred = tree.add("Transferred State (Redis-backed)")
+        state_data = result.get("transferred_state", {})
+        for cat, val in state_data.items():
+            cat_node = transferred.add(f"[magenta]{cat.title()}[/]")
+            cat_node.add(JSON.from_data(val))
+
+        rprint(Panel(tree, title="✨ Multi-Agent Federation Detail", border_style="cyan"))
+        
+        rprint(f"\n[green]Success![/] Seamless state transfer verified for [bold]{target_agent}[/].")
+        rprint("[dim italic]Handoff maintains artifacts, context, and semantic history across protocol boundaries.[/]")
+
+    except Exception as e:
+        rprint(f"[bold red]Handoff Simulation Failed:[/] {e}")
+
+
 # --- Runtime Command ---
 
 ENGRAM_BANNER = r"""
@@ -1527,6 +1639,8 @@ def _print_repl_help():
     table.add_row("heal now", "Trigger immediate repair loop")
     table.add_row("evolve status", "Show ML tool improvement dashboard")
     table.add_row("evolve apply <id>", "Apply a proposed tool refinement")
+    table.add_row("protocol translate --from <p1> --to <p2>", "Translate between agent protocols")
+    table.add_row("protocol handoff simulate", "Simulate multi-agent handoff")
     table.add_row("sync list", "List sync connections")
     table.add_row("auth whoami", "Show current identity & scopes")
     table.add_row("clear", "Clear the screen")

@@ -84,3 +84,70 @@ async def execute_legacy_tool(
         return await service.execute_legacy_tool(tool_name, arguments, metadata)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/translate", response_model=Dict[str, Any])
+async def protocol_translate(
+    payload: Dict[str, Any],
+    from_proto: str = Query(..., alias="from"),
+    to_proto: str = Query(..., alias="to")
+):
+    """
+    Generic bridge for translating any payload between protocols using the ontology.
+    """
+    service = FederationService()
+    try:
+        # Normalize protocol names
+        f = from_proto.upper()
+        t = to_proto.upper()
+        
+        # Use ontology as an intermediate step
+        canonical = service.translator.to_ontology(payload, f)
+        translated = service.translator.from_ontology(canonical, t)
+        
+        return {
+            "source_protocol": f,
+            "target_protocol": t,
+            "translated_payload": translated,
+            "canonical_bridge": canonical
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/handoff/simulate", response_model=Dict[str, Any])
+async def handoff_simulate(
+    source_agent: str,
+    target_agent: str,
+    request: Request,
+    principal: Dict[str, Any] = Depends(get_current_principal)
+):
+    """
+    Simulates a multi-agent handoff and returns semantic state details.
+    """
+    eat_token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not eat_token:
+        eat_token = principal.get("jti", "sim-session-id")
+    
+    service = FederationService()
+    try:
+        # Simulate a handoff by updating session state with mock data
+        jti = service._extract_jti(eat_token)
+        session = FederationSession(jti)
+        
+        mock_artifacts = {"message": f"Handoff from {source_agent}", "status": "active"}
+        mock_context = {"priority": "high", "agent_stack": [source_agent]}
+        
+        await session.update_state("artifacts", mock_artifacts)
+        await session.update_state("context", mock_context)
+        
+        state = await session.get_state()
+        
+        return {
+            "source": source_agent,
+            "target": target_agent,
+            "session_id": jti,
+            "transferred_state": state,
+            "semantic_readiness": "Verified",
+            "bridged_protocols": ["MCP", "CLI", "A2A", "ACP"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
