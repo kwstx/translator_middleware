@@ -84,9 +84,9 @@ async def test_routing(
             continue
             
         backends = available_backends(tool, metadata)
-        stats = await fetch_backend_stats(db, tool.id, backends)
+        stats, history = await fetch_backend_stats(db, tool.id, backends, include_history=True)
         
-        decision = route_tool_backend_sync(tool, metadata, request.task_description, stats)
+        decision = route_tool_backend_sync(tool, metadata, request.task_description, stats, history)
         
         # Apply manual override if requested
         if request.force_backend:

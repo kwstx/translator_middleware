@@ -11,6 +11,10 @@ from sentence_transformers import SentenceTransformer
 from sqlalchemy import Integer, case, func
 from sqlmodel import select
 import structlog
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
 
 from app.core.config import settings
 from app.db.models import (
@@ -103,6 +107,7 @@ class RoutingDecision:
     backend: str
     candidates: List[BackendScore]
     task_description: str
+    parallel_suggested: bool = False
 
 
 @dataclass(frozen=True)
@@ -113,6 +118,77 @@ class RoutingWeights:
     token_cost: float
     context_overhead: float
     preference: float
+    predictive: float
+
+@dataclass(frozen=True)
+class RoutingGuardrails:
+    max_token_budget: int
+    fallback_backend: str = CLI_BACKEND
+
+class LoadPredictor(nn.Module):
+    """Tiny neural net for load predictions."""
+    def __init__(self, input_size=5, hidden_size=10):
+        super(LoadPredictor, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_size, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        # Output represents a 'load factor' or predicted latency/success shift
+        return self.sigmoid(x)
+
+_PREDICTORS: Dict[str, LoadPredictor] = {}
+
+def _get_predictor(backend: str) -> LoadPredictor:
+    if backend not in _PREDICTORS:
+        _PREDICTORS[backend] = LoadPredictor()
+    return _PREDICTORS[backend]
+
+def predict_future_metrics(
+    backend: str, 
+    history: List[ToolRoutingDecision],
+    current_task_tokens: int
+) -> Dict[str, float]:
+    """
+    Uses the predictor to estimate future performance based on recent history.
+    """
+    if not history:
+        return {}
+        
+    model = _get_predictor(backend)
+    # Feature engineering from history (take last 5 samples)
+    recent = history[-5:]
+    if len(recent) < 5:
+        return {}
+        
+    # Features: [avg_latency, success_rate, avg_tokens, time_delta_index, current_load_est]
+    latencies = [r.latency_ms or 0.0 for r in recent]
+    successes = [1.0 if r.success else 0.0 for r in recent]
+    tokens = [r.token_cost_actual or 0.0 for r in recent]
+    
+    # Normalize features roughly
+    features = torch.tensor([
+        np.mean(latencies) / 2000.0,
+        np.mean(successes),
+        np.mean(tokens) / 1000.0,
+        current_task_tokens / 500.0,
+        len(history) / 100.0  # Simple load proxy
+    ], dtype=torch.float32)
+    
+    model.eval()
+    with torch.no_grad():
+        load_factor = model(features).item()
+        
+    # Shift baseline stats by load factor
+    return {
+        "latency_adjustment": 1.0 + (load_factor * 0.5), # up to 50% increase
+        "success_adjustment": 1.0 - (load_factor * 0.1), # up to 10% decrease
+        "token_adjustment": 1.0 + (load_factor * 0.05)   # minimal impact on tokens
+    }
 
 
 _DEFAULT_BACKEND_STATS = BackendStats(
@@ -171,6 +247,7 @@ def _weights_from_settings() -> RoutingWeights:
         token_cost=settings.ROUTING_WEIGHT_TOKEN_COST,
         context_overhead=settings.ROUTING_WEIGHT_CONTEXT_OVERHEAD,
         preference=settings.ROUTING_WEIGHT_PREFERENCE,
+        predictive=getattr(settings, "ROUTING_WEIGHT_PREDICTIVE", 0.15),
     )
 
 
@@ -354,6 +431,7 @@ def route_tool_backend_sync(
     metadata: ToolExecutionMetadata,
     task_description: str,
     stats_by_backend: Dict[str, BackendStats],
+    history_by_backend: Optional[Dict[str, List[ToolRoutingDecision]]] = None,
 ) -> RoutingDecision:
     weights = _weights_from_settings()
     task_text = (task_description or "").strip()
@@ -375,13 +453,21 @@ def route_tool_backend_sync(
         backend_vec = _embed_text(backend_text)
         similarity = _cosine_similarity(task_vec, backend_vec)
 
-        latency_score = _normalize_latency(stats.latency_ms)
+        # Predictive adjustment
+        task_tokens = estimate_tokens(task_text)
+        history = (history_by_backend or {}).get(backend, [])
+        adjustments = predict_future_metrics(backend, history, task_tokens)
+        lat_adj = adjustments.get("latency_adjustment", 1.0)
+        suc_adj = adjustments.get("success_adjustment", 1.0)
+
+        latency_score = _normalize_latency(stats.latency_ms * lat_adj)
+        success_score = stats.success_rate * suc_adj
         token_score = _normalize_cost(stats.token_cost, scale=600.0)
         context_score = _normalize_cost(stats.context_overhead, scale=500.0)
         preference_score = _backend_preference(task_text, tool, backend)
 
         performance_score = (
-            (weights.success * stats.success_rate)
+            (weights.success * success_score)
             + (weights.latency * latency_score)
             + (weights.token_cost * token_score)
             + (weights.context_overhead * context_score)
@@ -407,8 +493,36 @@ def route_tool_backend_sync(
         return RoutingDecision(backend=metadata.execution_type.value, candidates=[], task_description=task_text)
 
     candidates.sort(key=lambda c: c.composite_score, reverse=True)
+    
+    # Apply rules for optimal choice and budget guardrails
     best = candidates[0]
-    return RoutingDecision(backend=best.backend, candidates=candidates, task_description=task_text)
+    
+    # FALLBACK: Budget Guardrails
+    max_tokens = getattr(settings, "ROUTING_BUDGET_TOKEN_LIMIT", 8000)
+    if best.backend == MCP_BACKEND and best.token_cost_est > max_tokens:
+        cli_candidate = next((c for c in candidates if c.backend == CLI_BACKEND), None)
+        if cli_candidate and cli_candidate.token_cost_est < max_tokens:
+            logger.info("Budget guardrail triggered: Falling back to CLI from MCP", 
+                        mcp_cost=best.token_cost_est, cli_cost=cli_candidate.token_cost_est)
+            best = cli_candidate
+            
+    # PARALLEL EXECUTION: If competitive scores and low reliability
+    parallel_suggested = False
+    if len(candidates) > 1:
+        second = candidates[1]
+        score_diff = best.composite_score - second.composite_score
+        confidence_threshold = getattr(settings, "ROUTING_PARALLEL_CONFIDENCE_THRESHOLD", 0.05)
+        if score_diff < confidence_threshold and best.success_rate < 0.9:
+            logger.info("Suggesting parallel execution due to low confidence and reliability",
+                        best_backend=best.backend, second_backend=second.backend, diff=score_diff)
+            parallel_suggested = True
+
+    return RoutingDecision(
+        backend=best.backend, 
+        candidates=candidates, 
+        task_description=task_text,
+        parallel_suggested=parallel_suggested # Need to update dataclass
+    )
 
 
 async def fetch_backend_stats(
@@ -416,10 +530,11 @@ async def fetch_backend_stats(
     tool_id: Any,
     backends: Iterable[str],
     window_hours: Optional[int] = None,
-) -> Dict[str, BackendStats]:
+    include_history: bool = False,
+) -> Tuple[Dict[str, BackendStats], Dict[str, List[ToolRoutingDecision]]]:
     backend_list = list(backends)
     if not backend_list:
-        return {}
+        return {}, {}
     window = window_hours if window_hours is not None else settings.ROUTING_STATS_WINDOW_HOURS
     cutoff = None
     if window and window > 0:
@@ -460,7 +575,19 @@ async def fetch_backend_stats(
             context_overhead=float(avg_context or _DEFAULT_BACKEND_STATS.context_overhead),
             samples=int(count or 0),
         )
-    return stats
+
+    history: Dict[str, List[ToolRoutingDecision]] = {}
+    if include_history:
+        # Fetch last 10 samples for each backend
+        for backend in backend_list:
+            h_query = select(ToolRoutingDecision).where(
+                ToolRoutingDecision.tool_id == tool_id,
+                ToolRoutingDecision.backend_selected == backend
+            ).order_by(ToolRoutingDecision.created_at.desc()).limit(10)
+            h_res = await session.execute(h_query)
+            history[backend] = list(h_res.scalars().all())
+
+    return stats, history
 
 
 def estimate_backend_stats(

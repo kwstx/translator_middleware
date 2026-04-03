@@ -4,7 +4,9 @@ import uuid
 from app.services.federation.translator import FederationTranslator
 from app.services.federation.discovery import FederationDiscovery
 from app.services.federation.session import FederationSession
+from app.services.federation.session import FederationSession
 from app.services.federation.clients import A2AClient, ACPClient
+from app.services.federation.wrappers import AdaptiveWrapper
 from app.db.models import AgentRegistry
 from app.core.config import settings
 
@@ -20,6 +22,7 @@ class FederationService:
     def __init__(self, semantic_mapper: Optional[Any] = None):
         self.translator = FederationTranslator(semantic_mapper)
         self.discovery = FederationDiscovery(self.translator)
+        self.wrapper = AdaptiveWrapper(self.translator)
 
     async def mcp_to_cli_handoff(self, mcp_tool_call: Dict[str, Any], eat_token: str) -> Dict[str, Any]:
         """
@@ -78,6 +81,10 @@ class FederationService:
         """
         client = ACPClient(peer_endpoint)
         return await client.send_acp_task(task)
+
+    async def execute_legacy_tool(self, tool_name: str, arguments: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """ Executes a legacy/non-API tool via the adaptive wrapper. """
+        return await self.wrapper.execute_legacy_tool(tool_name, arguments, metadata)
 
     def _extract_jti(self, eat_token: str) -> str:
         """

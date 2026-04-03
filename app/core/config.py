@@ -140,6 +140,12 @@ class Settings(BaseSettings):
     ROUTING_WEIGHT_TOKEN_COST: float = 0.07
     ROUTING_WEIGHT_CONTEXT_OVERHEAD: float = 0.03
     ROUTING_WEIGHT_PREFERENCE: float = 0.1
+    ROUTING_WEIGHT_PREDICTIVE: float = 0.15
+    ROUTING_BUDGET_TOKEN_LIMIT: int = 8000
+    ROUTING_PARALLEL_CONFIDENCE_THRESHOLD: float = 0.05
+    PYTHON_INTERPRETER: str = "python"
+
+    DEFAULT_ONTOLOGY_PATH: str = "app/semantic/protocols.owl"
 
     # Local LLM (Ollama)
     OLLAMA_BASE_URL: str = "http://localhost:11434"

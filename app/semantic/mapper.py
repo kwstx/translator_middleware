@@ -25,8 +25,9 @@ class SemanticMapper:
         self.redis = get_redis_client()
         self.cache_ttl_seconds = settings.SEMANTIC_CACHE_TTL_SECONDS
         
-        if ontology_path:
-            self.load_ontology(ontology_path)
+        # Lazy loading: we don't load immediately unless requested
+        # if ontology_path:
+        #     self.load_ontology(ontology_path)
 
     def load_ontology(self, path: str):
         """
@@ -51,6 +52,9 @@ class SemanticMapper:
         """
         Searches the ontology for synonyms or equivalents in target protocols.
         """
+        if not self.ontology and self.ontology_path:
+            self.load_ontology(self.ontology_path)
+            
         if not self.ontology:
             return f"Error: Ontology not loaded."
 
@@ -115,6 +119,9 @@ class SemanticMapper:
         Maps a protocol-specific concept to a canonical ontology concept name.
         Falls back to the original concept when no ontology match is found.
         """
+        if not self.ontology and self.ontology_path:
+            self.load_ontology(self.ontology_path)
+            
         if not self.ontology:
             return concept
 
@@ -151,6 +158,9 @@ class SemanticMapper:
         Maps a canonical ontology concept name into a target protocol's concept name.
         Returns the original concept if no match is found.
         """
+        if not self.ontology and self.ontology_path:
+            self.load_ontology(self.ontology_path)
+            
         if not self.ontology:
             return concept
 

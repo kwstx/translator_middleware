@@ -68,3 +68,19 @@ async def delegate_to_acp_peer(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/legacy/execute", response_model=Dict[str, Any])
+async def execute_legacy_tool(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    metadata: Dict[str, Any]
+):
+    """
+    Executes a legacy or non-API tool via sandboxed CLI, direct API, or vision fallbacks.
+    Feeds all outputs through the unified self-healing + ontology layer.
+    """
+    service = FederationService()
+    try:
+        return await service.execute_legacy_tool(tool_name, arguments, metadata)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
