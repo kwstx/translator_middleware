@@ -1055,7 +1055,7 @@ app.add_typer(trace_app, name="trace")
 def trace_list(
     limit: int = typer.Option(20, help="Number of traces to show"),
     tool: Optional[str] = typer.Option(None, help="Filter by tool name"),
-    export_json: bool = typer.Option(False, "--export", "json", help="Export as JSON for easy piping"),
+    export_json: bool = typer.Option(False, "--export", help="Export as JSON for easy piping"),
 ):
     """
     Renders a filterable Rich table of recent semantic execution traces.
@@ -1105,11 +1105,10 @@ def trace_list(
     except Exception as e:
         rprint(f"[bold red]Failed to list traces:[/] {e}")
 
-@trace_app.command(name=".")
 @trace_app.command(name="detail")
 def trace_detail(
     trace_id: str = typer.Argument(".", help="Trace ID to inspect (use '.' for the very latest)"),
-    export_json: bool = typer.Option(False, "--export", "json", help="Export full trace as JSON"),
+    export_json: bool = typer.Option(False, "--export", help="Export full trace as JSON"),
 ):
     """
     Detailed inspection including semantic path, routing reasoning, and healing steps.
