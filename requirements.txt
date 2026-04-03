@@ -38,3 +38,4 @@ openapi-spec-validator>=0.7.1
 strawberry-graphql>=0.219.2
 docker>=7.0.0
 mcp>=0.1.0
+keyring>=24.3.0

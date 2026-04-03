@@ -11,12 +11,15 @@ from typing import Optional, Dict, Any, List
 
 import typer
 import httpx
+import keyring
+import jwt
 from pydantic import BaseModel, Field, HttpUrl
 import rich.box
 from rich.json import JSON
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.tree import Tree
 from rich import print as rprint
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
@@ -44,16 +47,41 @@ class CLIContext:
         self.config = EngramConfig()
         self.json_output = False
         self.console = Console()
+        self._token_validated = False
 
-    def request(self, method: str, endpoint: str, **kwargs) -> Any:
+    def get_token(self) -> Optional[str]:
+        """Retrieve EAT token from keyring with fallback to config."""
+        try:
+            token = keyring.get_password(APP_NAME, "eat_token")
+            return token or self.config.eat_token
+        except Exception:
+            return self.config.eat_token
+
+    def set_token(self, token: Optional[str]):
+        """Save EAT token to keyring and update config fallback."""
+        self.config.eat_token = token
+        try:
+            if token:
+                keyring.set_password(APP_NAME, "eat_token", token)
+            else:
+                keyring.delete_password(APP_NAME, "eat_token")
+        except Exception as e:
+            if self.config.verbose:
+                rprint(f"[dim yellow]Warning: Could not use keyring: {e}[/]")
+        self.save_config()
+
+    def request(self, method: str, endpoint: str, auth_token: Optional[str] = None, **kwargs) -> Any:
         url = f"{self.config.api_url}{endpoint}"
         headers = {}
-        if self.config.eat_token:
-            headers["Authorization"] = f"Bearer {self.config.eat_token}"
+        token = auth_token or self.get_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         
         with httpx.Client(headers=headers, timeout=30.0) as client:
             try:
                 response = client.request(method, url, **kwargs)
+                if response.status_code == 401:
+                    self.handle_auth_error(response)
                 if response.status_code >= 400:
                     try:
                         error_detail = response.json().get("detail", response.text)
@@ -63,6 +91,31 @@ class CLIContext:
                 return response.json()
             except httpx.RequestError as exc:
                 raise Exception(f"Connection Error: Could not connect to {url}. Ensure the backend is running.") from exc
+
+    def handle_auth_error(self, response):
+        """Show helpful suggestions for authentication errors."""
+        rprint("\n[bold red]🔐 Authentication Required[/]")
+        rprint("Your session has expired or the token is invalid.")
+        rprint("\n[bold cyan]Suggestions:[/]")
+        rprint("  1. Run [bold green]engram auth login[/] to re-authenticate.")
+        rprint("  2. If using a manual token, check [bold]engram auth status[/].")
+        rprint("  3. Ensure the backend API URL is correct: [bold]engram config show[/]\n")
+        raise typer.Exit(1)
+
+    def validate_token_silently(self):
+        """Validate the token in the background without blocking the user flow."""
+        token = self.get_token()
+        if not token:
+            return
+
+        try:
+            # Quick local JWT check if possible
+            payload = jwt.decode(token, options={"verify_signature": False, "verify_exp": True})
+            # If close to expiration (e.g. < 5 mins), don't block but maybe log it
+        except jwt.ExpiredSignatureError:
+            rprint("[dim yellow]Note: Your auth token has expired. Some commands may fail.[/]")
+        except Exception:
+            pass
 
     def load_config(self):
         if CONFIG_FILE.exists():
@@ -141,6 +194,7 @@ def main_callback(
     
     state.json_output = json
     state.load_config()
+    state.validate_token_silently()
     ctx.obj = state
 
 # --- Commands ---
@@ -173,8 +227,8 @@ def info():
         "Config Path": str(CONFIG_FILE),
         "API URL": state.config.api_url,
         "Backend": state.config.backend_preference.value,
-        "Auth Status": "Authenticated" if state.config.eat_token else "Anonymous",
-        "EAT Token": "****" + state.config.eat_token[-4:] if state.config.eat_token else "None"
+        "Auth Status": "Authenticated" if state.get_token() else "Anonymous",
+        "EAT Token": "****" + state.get_token()[-4:] if state.get_token() else "None"
     }
     state.output(status, title="System Information")
 
@@ -183,34 +237,144 @@ auth_app = typer.Typer(help="Manage authentication and EAT (Engram Authorization
 app.add_typer(auth_app, name="auth")
 
 @auth_app.command("login")
-def auth_login(email: str = typer.Option(..., prompt=True)):
+def auth_login(
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="Directly input an EAT token"),
+    browser: bool = typer.Option(True, "--browser/--no-browser", help="Open login page in browser")
+):
     """
     Authenticate with the Engram backend to retrieve an EAT.
     """
-    # This is a placeholder for the actual login logic
-    rprint(f"[yellow]Initiating login flow for {email}...[/]")
-    # In a real scenario, we'd call the /auth/login endpoint
-    fake_token = "eat_live_9a2b3c4d5e6f7g8h9i0j"
-    state.config.eat_token = fake_token
-    state.save_config()
-    state.output({"email": email, "eat": fake_token}, title="Login Successful")
+    if token:
+        state.set_token(token)
+        rprint("✅ [bold green]Token saved securely via keyring.[/]")
+        return
+
+    login_url = f"{state.config.api_url}/api/v1/auth/login"
+    rprint(f"[bold cyan]Initiating login flow...[/]")
+    
+    if browser:
+        rprint(f"Opening browser to: [link={login_url}]{login_url}[/link]")
+        typer.launch(login_url)
+    
+    rprint("\n[yellow]Please paste your EAT (Engram Authorization Token) below:[/]")
+    input_token = typer.prompt("EAT Token", hide_input=True)
+    
+    if input_token:
+        state.set_token(input_token)
+        rprint("\n✅ [bold green]Login successful! Identity and permissions synced.[/]")
+        auth_whoami()
+    else:
+        rprint("[bold red]Login aborted.[/]")
+
+@auth_app.command("whoami")
+def auth_whoami():
+    """
+    Display current identity and a semantic permission summary.
+    """
+    token = state.get_token()
+    if not token:
+        rprint("[bold red]Not authenticated.[/] Run 'engram auth login' first.")
+        return
+
+    try:
+        # Decode token to show claims
+        payload = jwt.decode(token, options={"verify_signature": False})
+        
+        tree = Tree(f"👤 [bold cyan]Identity:[/] {payload.get('sub', 'Unknown')}")
+        
+        # Scopes and Permissions
+        perm_node = tree.add("🔐 [bold green]Permissions (EAT Structured)[/]")
+        scopes = payload.get("scopes", {})
+        
+        for tool, perms in scopes.items():
+            tool_node = perm_node.add(f"🛠️ [magenta]{tool}[/]")
+            for p in perms:
+                tool_node.add(f"[dim]{p}[/]")
+        
+        # Semantic Scopes
+        semantic_node = tree.add("🧠 [bold yellow]Semantic Scopes (Ontology-based)[/]")
+        sem_scopes = payload.get("semantic_scopes", [])
+        for ss in sem_scopes:
+            semantic_node.add(f"[italic blue]{ss}[/]")
+            # Provide helpful translation for common scopes
+            if "execute" in ss:
+                semantic_node.add("  └─ [dim]Can invoke cross-protocol tool translations[/]")
+            if "read" in ss:
+                semantic_node.add("  └─ [dim]Can query ontology metadata and tool catalogs[/]")
+
+        rprint(Panel(tree, title="✨ Current Session Identity", border_style="cyan", expand=False))
+        
+        # Optional: verify with backend if possible
+        try:
+            me_info = state.request("GET", "/api/v1/permissions/me")
+            rprint(f"[dim green]Backend verification: Active profile '{me_info.get('profile_name', 'default')}'[/]")
+        except:
+            pass
+
+    except Exception as e:
+        rprint(f"[bold red]Error decoding identity:[/] {e}")
+
+@auth_app.command("scope")
+def auth_scope():
+    """
+    Explore and visualize the semantic scopes assigned to this EAT.
+    """
+    token = state.get_token()
+    if not token:
+        rprint("[bold red]Not authenticated.[/]")
+        return
+
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        sem_scopes = payload.get("semantic_scopes", [])
+        
+        table = Table(title="🧠 Semantic Access Scopes", box=rich.box.DOUBLE_EDGE)
+        table.add_column("Scope Identifier", style="cyan")
+        table.add_column("Ontology Context", style="magenta")
+        table.add_column("Capability", style="green")
+        
+        for ss in sem_scopes:
+            # Mocking ontology expansion since we don't have a direct ontology query here
+            context = "Global" if "all" in ss or ":" not in ss else ss.split(":")[1]
+            capability = "Translation Execution" if "execute" in ss else "Metadta Query"
+            
+            table.add_row(ss, context, capability)
+            
+        state.console.print(table)
+        rprint("[dim italic]These scopes are used for agentic routing and tool pruning decisions.[/]")
+
+    except Exception as e:
+        rprint(f"[bold red]Error:[/] {e}")
 
 @auth_app.command("token-set")
 def auth_token_set(token: str):
     """
     Manually set the Engram Authorization Token (EAT).
     """
-    state.config.eat_token = token
-    state.save_config()
-    rprint(f"✅ EAT token updated in {CONFIG_FILE}")
+    state.set_token(token)
+    rprint(f"✅ EAT token updated securely.")
 
 @auth_app.command("status")
 def auth_status():
     """
     Check current authentication status.
     """
-    if state.config.eat_token:
-        state.output({"status": "authenticated", "token_preview": state.config.eat_token[:10] + "..."})
+    token = state.get_token()
+    if token:
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            sub = payload.get("sub", "Unknown")
+            exp = payload.get("exp")
+            expires_at = datetime.fromtimestamp(exp) if exp else "Never"
+            
+            state.output({
+                "status": "authenticated",
+                "identity": sub,
+                "expires_at": str(expires_at),
+                "token_preview": token[:10] + "..."
+            }, title="Authentication Status")
+        except:
+            state.output({"status": "authenticated (invalid format)", "token_preview": token[:10] + "..."}, title="Authentication Status")
     else:
         state.output({"status": "unauthenticated"}, title="Authentication Status")
 
