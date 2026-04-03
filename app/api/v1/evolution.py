@@ -1,6 +1,7 @@
 import uuid
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -22,10 +23,21 @@ class FeedbackSubmit(BaseModel):
 class EvolutionResponse(BaseModel):
     id: uuid.UUID
     tool_id: uuid.UUID
+    tool_name: Optional[str] = None
     previous_version: str
     new_version: str
     change_type: str
     confidence_score: float
+    applied: bool
+    diff_payload: Optional[Dict[str, Any]] = None
+    evolution_signals: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+
+class StatusResponse(BaseModel):
+    pending_count: int
+    total_evolutions: int
+    pending_proposals: List[EvolutionResponse]
+    last_updated: datetime
 
 @router.post("/feedback", status_code=status.HTTP_201_CREATED)
 async def submit_tool_feedback(
@@ -69,21 +81,41 @@ async def get_tool_evolution_history(
     result = await db.execute(stmt)
     return result.scalars().all()
 
+@router.get("/status", response_model=StatusResponse)
+async def get_evolution_status(
+    db: Any = Depends(get_session),
+    principal: Dict[str, Any] = Depends(get_current_principal),
+):
+    """
+    Returns the current ML improvement progress across all tools.
+    """
+    service = ToolEvolutionService(db)
+    return await service.get_evolution_status()
+
 @router.post("/trigger", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_evolution_loop(
     db: Any = Depends(get_session),
     principal: Dict[str, Any] = Depends(get_current_principal),
 ):
     """
-    Manually triggers the Celery-monitored evolution loop.
-    (Self-Evolving Tools are usually evolved via background pipeline).
+    Manually triggers evolution analysis.
+    Creates pending proposals in the dashboard.
     """
-    # Permission check (e.g., admin or system)
-    # Mocking check for now
-    
     service = ToolEvolutionService(db)
-    # In a real environment, this would call .delay() on a Celery task.
-    # Here we run synchronously if requested (or we could use a background task in FastAPI).
     await service.run_evolution_loop()
-    
     return {"status": "accepted", "message": "Evolution pipeline trigger successful."}
+
+@router.post("/apply/{evolution_id}", response_model=EvolutionResponse)
+async def apply_tool_evolution(
+    evolution_id: uuid.UUID,
+    db: Any = Depends(get_session),
+    principal: Dict[str, Any] = Depends(get_current_principal),
+):
+    """
+    Applies a pending evolution proposal to a tool.
+    """
+    service = ToolEvolutionService(db)
+    evolution = await service.apply_evolution(evolution_id)
+    if not evolution:
+        raise HTTPException(status_code=404, detail="Pending evolution not found or already applied.")
+    return evolution

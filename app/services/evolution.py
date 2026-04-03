@@ -82,21 +82,66 @@ class ToolEvolutionService:
             change_type=evolution_type,
             diff_payload=diff_payload,
             evolution_signals=dict(signals),
-            confidence_score=0.85 # Mock confidence
+            confidence_score=0.85, # Mock confidence
+            applied=False
         )
         
         self.session.add(evolution)
-        
-        # Apply version and updates to tool registry (Hot-redeploy)
-        tool.version = new_version
-        if "description" in diff_payload:
-            tool.description = diff_payload["description"]
-        if "actions" in diff_payload:
-            tool.actions = diff_payload["actions"]
-            
         await self.session.commit()
-        logger.info("Tool evolved and hot-redeployed", tool_id=tool_id, version=new_version)
+        logger.info("Evolution proposed", tool_id=tool_id, version=new_version)
         return evolution
+
+    async def apply_evolution(self, evolution_id: uuid.UUID) -> Optional[ToolEvolution]:
+        """
+        Actually applies the proposed evolution to the tool registry.
+        """
+        evolution = await self.session.get(ToolEvolution, evolution_id)
+        if not evolution or evolution.applied:
+            return None
+
+        tool = await self.session.get(ToolRegistry, evolution.tool_id)
+        if not tool:
+            return None
+
+        # Apply version and updates to tool registry (Hot-redeploy)
+        tool.version = evolution.new_version
+        if "description" in evolution.diff_payload:
+            tool.description = evolution.diff_payload["description"]
+        if "actions" in evolution.diff_payload:
+            tool.actions = evolution.diff_payload["actions"]
+            
+        evolution.applied = True
+        evolution.applied_at = datetime.now(timezone.utc)
+        
+        self.session.add(tool)
+        self.session.add(evolution)
+        await self.session.commit()
+        logger.info("Tool evolved and hot-redeployed", tool_id=tool.id, version=tool.version)
+        return evolution
+
+    async def get_evolution_status(self) -> Dict[str, Any]:
+        """
+        Aggregates summary of evolution progress across all tools.
+        """
+        pending_stmt = select(ToolEvolution, ToolRegistry.name).join(ToolRegistry, ToolEvolution.tool_id == ToolRegistry.id).where(ToolEvolution.applied == False)
+        pending_result = await self.session.execute(pending_stmt)
+        pending_data = []
+        for row in pending_result:
+            evo, name = row
+            evo_dict = evo.model_dump()
+            evo_dict["tool_name"] = name
+            pending_data.append(evo_dict)
+
+        total_stmt = select(ToolEvolution)
+        total_result = await self.session.execute(total_stmt)
+        total = total_result.scalars().all()
+
+        return {
+            "pending_count": len(pending_data),
+            "total_evolutions": len(total),
+            "pending_proposals": pending_data,
+            "last_updated": datetime.now(timezone.utc)
+        }
 
     def _refine_actions(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Mock logic to 'optimize' action parameters or types

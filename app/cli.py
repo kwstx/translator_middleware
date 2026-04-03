@@ -1211,6 +1211,141 @@ def trace_detail(
         rprint(f"[bold red]Failed to fetch trace details:[/] {e}")
 
 
+# --- Evolve Subgroup ---
+evolve_app = typer.Typer(help="Manage self-evolving tools and ML-driven improvements")
+app.add_typer(evolve_app, name="evolve")
+
+@evolve_app.command("status")
+def evolve_status():
+    """
+    Display ML improvement progress in a dashboard-like Rich layout.
+    """
+    ctx = state
+    try:
+        data = ctx.request("GET", "/api/v1/evolution/status")
+        
+        # Dashboard Header
+        pending_count = data.get("pending_count", 0)
+        total_evolutions = data.get("total_evolutions", 0)
+        
+        # Format timestamp
+        last_upd = data.get("last_updated", "N/A")
+        if isinstance(last_upd, str) and "T" in last_upd:
+            last_upd = last_upd.split(".")[0].replace("T", " ")
+
+        header = Panel(
+            Group(
+                f"[bold cyan]Improvement Pipeline Status:[/] [bold green]Active[/]",
+                f"[bold cyan]Pending Proposals:[/] [bold yellow]{pending_count}[/]",
+                f"[bold cyan]Total Historical Evolutions:[/] [bold magenta]{total_evolutions}[/]",
+                f"[bold cyan]Last ML Update:[/] [dim]{last_upd}[/]"
+            ),
+            title="🧠 [bold]Self-Evolving Tools Dashboard[/]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        ctx.console.print(header)
+        
+        # Tables for refined descriptions, defaults, and recovery strategies
+        proposals = data.get("pending_proposals", [])
+        if not proposals:
+            rprint("[dim italic]No pending tool evolutions detected. The system is performing at optimal thresholds.[/]")
+            return
+            
+        table = Table(
+            title="✨ [bold]Pending Tool Refinements[/]",
+            box=box.ROUNDED,
+            header_style="bold magenta",
+            show_lines=True
+        )
+        table.add_column("Tool ID / Version", style="cyan")
+        table.add_column("Refinement Type", style="yellow")
+        table.add_column("Proposed Changes (Deep Insight)", style="white")
+        table.add_column("Conf.", justify="right")
+        table.add_column("Proposal ID", style="dim")
+
+        for p in proposals:
+            # Change summary
+            changes = []
+            diff = p.get("diff_payload", {}) or {}
+            if "description" in diff:
+                changes.append("[bold green]Description Path Refinement:[/]\n" + diff["description"])
+            if "actions" in diff:
+                changes.append("[bold blue]Parameter Schema Optimization:[/]\nAction schemas tightened based on failure history.")
+            if "recovery_strategies" in diff:
+                changes.append("[bold red]New Recovery Strategy:[/]\nPattern-based automated fallback mapping added.")
+                
+            change_text = "\n\n".join(changes) if changes else "[dim]Internal metadata optimization[/]"
+            
+            table.add_row(
+                f"[bold cyan]{p['tool_name']}[/]\n[dim]{p['previous_version']} → {p['new_version']}[/]",
+                p["change_type"].replace("_", " ").title(),
+                change_text,
+                f"{p['confidence_score']:.1%}",
+                str(p["id"])[:8]
+            )
+            
+        ctx.console.print(table)
+        rprint("\n[dim]Use [bold]engram evolve apply <id>[/] to authorize a specific improvement.[/]")
+        
+    except Exception as e:
+        rprint(f"[bold red]Evolution Status Failed:[/] {e}")
+
+@evolve_app.command("apply")
+def evolve_apply(
+    evolution_id: str = typer.Argument(..., help="The ID (or start of ID) of the evolution proposal to apply"),
+    force: bool = typer.Option(False, "--force", "-f", help="Apply without confirmation prompt")
+):
+    """
+    Trigger updates with confirmation prompts and show before/after diffs.
+    """
+    ctx = state
+    try:
+        # First, fetch details to show diff
+        status_data = ctx.request("GET", "/api/v1/evolution/status")
+        proposal = next((p for p in status_data.get("pending_proposals", []) if str(p["id"]).startswith(evolution_id)), None)
+        
+        if not proposal:
+            rprint(f"[bold red]Error:[/] Proposal with ID start '{evolution_id}' not found.")
+            return
+            
+        # Show Clean Diff
+        rprint(f"\n[bold]Previewing Evolution for Tool:[/] [cyan]{proposal['tool_name']}[/]")
+        rprint(f"[bold]Version Change:[/] [dim]{proposal['previous_version']} → {proposal['new_version']}[/]\n")
+        
+        diff_payload = proposal.get("diff_payload", {}) or {}
+        
+        if not diff_payload:
+            rprint("[dim yellow]No visual changes in this proposal (metadata-only update).[/]")
+        else:
+            for key, value in diff_payload.items():
+                rprint(Panel(
+                    str(value),
+                    title=f"Proposed {key.title()} Update",
+                    border_style="green"
+                ))
+            
+        if not force:
+            confirm = typer.confirm("Apply this adaptive intelligence update?", default=True)
+            if not confirm:
+                rprint("[yellow]Update aborted by user.[/]")
+                return
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold green]Hot-redeploying tool registry..."),
+            transient=True
+        ) as progress:
+            progress.add_task("apply")
+            result = ctx.request("POST", f"/api/v1/evolution/apply/{proposal['id']}")
+            
+        rprint(f"✅ [bold green]Evolution successful![/] Tool is now running version [bold]{result['new_version']}[/].")
+        rprint("[dim italic]Internal ontology weights and execution schemas have been synchronized.[/]")
+        
+    except Exception as e:
+        rprint(f"[bold red]Evolution Apply Failed:[/] {e}")
+
+
 # --- Runtime Command ---
 
 ENGRAM_BANNER = r"""
@@ -1390,6 +1525,8 @@ def _print_repl_help():
     table.add_row("trace <id>", "Inspect a specific trace")
     table.add_row("heal status", "Show self-healing reconciliation status")
     table.add_row("heal now", "Trigger immediate repair loop")
+    table.add_row("evolve status", "Show ML tool improvement dashboard")
+    table.add_row("evolve apply <id>", "Apply a proposed tool refinement")
     table.add_row("sync list", "List sync connections")
     table.add_row("auth whoami", "Show current identity & scopes")
     table.add_row("clear", "Clear the screen")

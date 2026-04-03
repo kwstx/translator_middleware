@@ -536,5 +536,6 @@ class ToolEvolution(SQLModel, table=True):
     )
     
     confidence_score: float = Field(default=1.0)
-    applied_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    applied_at: Optional[datetime] = Field(default=None) # Set when applied
+    applied: bool = Field(default=False) # Whether the change has been applied to registry
     is_active: bool = Field(default=True)
