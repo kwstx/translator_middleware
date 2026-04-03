@@ -74,13 +74,17 @@ async def ingest_docs(
     tool = await service.extract_from_docs(docs_text, agent_uuid)
     return tool
 
+from sqlalchemy.orm import selectinload
+
 @router.get("/tools")
 async def list_tools(db: Session = Depends(get_session)):
     """
-    List all registered tools.
+    List all registered tools including their execution backend metadata.
     """
-    tools = db.exec(select(ToolRegistry)).all()
-    return tools
+    stmt = select(ToolRegistry).options(selectinload(ToolRegistry.execution_metadata))
+    results = await db.execute(stmt)
+    return results.scalars().all()
+
 
 # --- MCP Native Server Implementation (JSON-RPC over HTTP) ---
 

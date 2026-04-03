@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import difflib
 
 import typer
 import httpx
@@ -419,21 +420,166 @@ def config_set(
 tool_app = typer.Typer(help="Discover and manage tools (MCP & CLI)")
 app.add_typer(tool_app, name="tools")
 
-@tool_app.command("discover")
-def tool_discover(query: Optional[str] = typer.Argument(None)):
+def _fuzzy_search(query: str, tools: List[Dict]):
+    """Score-based fuzzy filtering for tools."""
+    results = []
+    q_low = query.lower()
+    for t in tools:
+        name = t.get("name", "").lower()
+        desc = t.get("description", "").lower()
+        tags = " ".join(t.get("tags", [])).lower()
+        
+        # Exact match / substring (high priority)
+        if q_low in name:
+            results.append((1.0, t))
+            continue
+            
+        # Score based on name closeness
+        score = difflib.SequenceMatcher(None, q_low, name).ratio()
+        if score > 0.4:
+            results.append((score, t))
+            continue
+            
+        # Check description/tags
+        if q_low in desc or q_low in tags:
+            results.append((0.5, t))
+            
+    # Sort by score descending
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [r[1] for r in results]
+
+@tool_app.command("list")
+def tool_list(
+    popular: bool = typer.Option(False, "--popular", help="Include pre-optimized wrappers for popular apps"),
+    query: Optional[str] = typer.Option(None, "--filter", "-f", help="Quick fuzzy filter for tool names or descriptions"),
+):
     """
-    Discover available tools across all connected protocols.
+    List all registered tools with backend type, semantic tags, and performance stats.
     """
-    # Placeholder for tool discovery logic
-    tools = [
-        {"id": "slack.post_message", "type": "mcp", "description": "Post a message to Slack"},
-        {"id": "github.create_issue", "type": "mcp", "description": "Create a new GitHub issue"},
-        {"id": "local.list_files", "type": "cli", "description": "List files in directory"}
-    ]
-    if query:
-        tools = [t for t in tools if query.lower() in t["id"].lower()]
-    
-    state.output(tools, title=f"Discovery Results: {query or 'All'}")
+    ctx = state
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}"),
+        transient=True,
+    ) as progress:
+        progress.add_task(description="Fetching tool registry...", total=None)
+        try:
+            # 1. Fetch custom tools from registry
+            custom_tools = ctx.request("GET", "/api/v1/registry/tools")
+            
+            # 2. Fetch performance stats to join
+            stats = ctx.request("GET", "/api/v1/routing/list")
+            stats_map = { (s['tool_name'], s['backend']): s for s in stats }
+            
+            processed_tools = []
+            for t in custom_tools:
+                # Backend discovery
+                exec_meta = t.get("execution_metadata") or {}
+                backend = exec_meta.get("execution_type", "CLI").upper()
+                
+                # Join with stats
+                s = stats_map.get((t["name"], backend), {})
+                success_rate = s.get("success_rate", 1.0) # Default to 100% (healthy/new)
+                
+                processed_tools.append({
+                    "name": t["name"],
+                    "description": t["description"],
+                    "backend": backend,
+                    "type": (t.get("tags") or ["Universal"])[0],
+                    "success": success_rate,
+                    "is_popular": False,
+                    "id": t.get("id"),
+                    "tags": t.get("tags", [])
+                })
+                
+            # 3. Add popular tools if requested
+            if popular:
+                popular_entries = ctx.request("GET", "/api/v1/catalog/entries")
+                for p in popular_entries:
+                    processed_tools.append({
+                        "name": p["display_name"],
+                        "description": p["description"],
+                        "backend": "MCP/CLI", # Hero feature: pre-optimized dual support
+                        "type": p.get("category", "Popular"),
+                        "success": 0.99, # Pre-seeded apps have high confidence
+                        "is_popular": True,
+                        "id": p.get("slug"),
+                        "tags": p.get("tags", [])
+                    })
+
+            # 4. Handle Filtering
+            if query:
+                final_tools = _fuzzy_search(query, processed_tools)
+            else:
+                # Prioritize Custom tools (Hero) then Popular
+                final_tools = sorted(processed_tools, key=lambda x: (x["is_popular"], x["name"]))
+
+            if ctx.json_output:
+                print(json.dumps(final_tools, indent=2))
+                return
+
+            # 5. Render Rich Table
+            table = Table(
+                title="🛠️ [bold]Engram Tool Catalog[/]",
+                subtitle="[dim]Custom tools are prioritized as universal self-healing bridge entries[/]",
+                box=box.SIMPLE_HEAVY,
+                header_style="bold magenta",
+                show_lines=False
+            )
+            
+            table.add_column("S", width=2, justify="center") # Status/Type Icon
+            table.add_column("Tool / Extension", style="bold cyan")
+            table.add_column("Backend", justify="center")
+            table.add_column("Semantic Type", style="dim green")
+            table.add_column("Success", justify="right")
+            table.add_column("Description", style="italic")
+
+            for t in final_tools:
+                # Backend Icon + Text
+                if t["backend"] == "MCP":
+                    backend_fmt = "🛠️ [bold blue]MCP[/]"
+                elif t["backend"] == "CLI":
+                    backend_fmt = "💻 [bold green]CLI[/]"
+                else:
+                    backend_fmt = "🚀 [bold yellow]Dual[/]" # Hybrid/Popular
+                
+                # Hero indicator for custom tools
+                hero_icon = "✨" if not t["is_popular"] else "📦"
+                
+                # Success Rate coloring
+                sr = t["success"]
+                color = "green" if sr >= 0.9 else "yellow" if sr >= 0.7 else "red"
+                success_fmt = f"[{color}]{sr:.1%}[/]"
+                
+                table.add_row(
+                    hero_icon,
+                    t["name"],
+                    backend_fmt,
+                    t["type"],
+                    success_fmt,
+                    (t["description"][:60] + "...") if len(t["description"]) > 60 else t["description"]
+                )
+
+            ctx.console.print(table)
+            rprint(f"\n[dim]Showing {len(final_tools)} active tools. Use [bold]--popular[/] to see pre-optimized integrations.[/]")
+            if not query:
+                rprint("[dim italic]ℹ️  Universal tools are linked via semantic ontology for cross-protocol healing.[/]")
+
+        except Exception as e:
+            rprint(f"[bold red]Discovery Error:[/] {e}")
+
+
+@tool_app.command("search")
+def tool_search(
+    query: str = typer.Argument(..., help="Query to search for tools in name, tags, or description"),
+    popular: bool = typer.Option(True, "--popular/--no-popular", help="Include popular app catalog in search")
+):
+    """
+    Search for tools using fuzzy matching. Highlights universal vs pre-optimized apps.
+    """
+    # Simply delegate to tool_list with filtering
+    tool_list(popular=popular, query=query)
+
 
 
 # --- Register Subgroup ---
