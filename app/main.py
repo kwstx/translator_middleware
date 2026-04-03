@@ -36,6 +36,7 @@ from app.api.v1 import (
     events,
     tracing,
     catalog,
+    reconciliation,
 )
 from bridge.memory import router as memory_router
 from app.core.config import settings
@@ -181,5 +182,6 @@ app.include_router(registry.router, prefix=settings.API_V1_STR, tags=["Registry"
 app.include_router(events.router, prefix=settings.API_V1_STR, tags=["Events"])
 app.include_router(tracing.router, prefix=settings.API_V1_STR, tags=["Tracing"])
 app.include_router(catalog.router, prefix=settings.API_V1_STR, tags=["Catalog"])
+app.include_router(reconciliation.router, prefix=settings.API_V1_STR + "/reconciliation", tags=["Reconciliation"])
 app.include_router(memory_router, prefix=settings.API_V1_STR)
 

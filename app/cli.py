@@ -12,6 +12,8 @@ from typing import Optional, Dict, Any, List
 import typer
 import httpx
 from pydantic import BaseModel, Field, HttpUrl
+import rich.box
+from rich.json import JSON
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -397,6 +399,113 @@ def register_cli(
         title="🚀 CLI Wrapper Success",
         border_style="magenta"
     ))
+
+
+# --- Heal Subgroup ---
+heal_app = typer.Typer(help="Inspect and trigger semantic self-healing for tool drifts")
+app.add_typer(heal_app, name="heal")
+
+@heal_app.command("status")
+def heal_status(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full logs and detailed drift analysis"),
+    fix: bool = typer.Option(False, "--fix", help="Trigger immediate repair loops if drifts are found")
+):
+    """
+    Query the reconciliation engine for detected semantic drifts and pending repairs.
+    """
+    ctx = state
+    try:
+        if fix:
+             with Progress(SpinnerColumn(), TextColumn("[yellow]Triggering proactive repair..."), transient=True) as progress:
+                 progress.add_task("healing")
+                 ctx.request("POST", "/api/v1/reconciliation/heal")
+        
+        data = ctx.request("GET", "/api/v1/reconciliation/status")
+        
+        # Table 1: Drifts
+        drift_table = Table(title="🔍 Semantic Drift Analysis", border_style="bold yellow", box=rich.box.ROUNDED)
+        drift_table.add_column("Source Protocol", style="cyan")
+        drift_table.add_column("Field Drift", style="magenta")
+        drift_table.add_column("Ontology Match", style="green")
+        drift_table.add_column("Conf.", style="bold yellow")
+        drift_table.add_column("Status", style="bold")
+        
+        pending_drifts = data.get("pending_drifts", [])
+        if not pending_drifts:
+            drift_table.add_row("[dim]N/A[/]", "[dim]No active drifts detected[/]", "-", "-", "[green]HEALTHY[/]")
+        else:
+            for drift in pending_drifts:
+                conf = drift.get("confidence") or 0.0
+                # Semantic logic: highlight high confidence vs low confidence for manual review
+                status_color = "green" if conf >= 0.7 else "yellow"
+                status_text = "AUTO-REPAIR" if conf >= 0.7 else "PENDING-REVIEW"
+                
+                drift_table.add_row(
+                    f"{drift['source_protocol']} → {drift['target_protocol']}",
+                    drift["source_field"],
+                    drift["suggested_mapping"] or f"[red]RESOLVE MANUALLY[/]",
+                    f"{conf:.1%}",
+                    f"[{status_color}]{status_text}[/]"
+                )
+        
+        ctx.console.print(drift_table)
+        
+        # Table 2: Active Mappings
+        mapping_table = Table(title="🔗 Persistent Semantic Mappings", border_style="bold green", box=rich.box.ROUNDED)
+        mapping_table.add_column("Route", style="cyan")
+        mapping_table.add_column("Current Mappings (Source → Target)", style="white")
+        mapping_table.add_column("Ver.", style="dim")
+        
+        mappings = data.get("active_mappings", [])
+        for m in mappings:
+            equivs = m.get("semantic_equivalents", {})
+            rows = [f"[cyan]{k}[/] → [green]{v}[/]" for k, v in equivs.items()]
+            mapping_table.add_row(
+                f"{m['source_protocol']} → {m['target_protocol']}",
+                "\n".join(rows) if rows else "[dim]No equivalents[/]",
+                str(m["version"])
+            )
+        ctx.console.print(mapping_table)
+        
+        if verbose and pending_drifts:
+            rprint("\n[bold cyan]Detailed Drift Logs (Telemetry Excerpts):[/]")
+            for drift in pending_drifts:
+                rprint(Panel(
+                    JSON.from_data(drift["payload_excerpt"]),
+                    title=f"Source Field: [bold magenta]{drift['source_field']}[/]",
+                    subtitle=f"Failure Type: {drift['error_type']} | ID: {drift['id']}",
+                    border_style="yellow"
+                ))
+
+    except Exception as e:
+        rprint(f"[bold red]Status Check Failed:[/] {e}")
+
+@heal_app.command("now")
+def heal_now():
+    """
+    Trigger immediate semantic repair loops for all detected drifts.
+    """
+    ctx = state
+    rprint("[bold yellow]Initiating manual self-healing loop...[/]")
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            transient=False,
+        ) as progress:
+            task = progress.add_task("Querying drift database...", total=None)
+            time.sleep(0.5)
+            progress.update(task, description="Re-aligning with semantic ontology...")
+            time.sleep(1.0)
+            result = ctx.request("POST", "/api/v1/reconciliation/heal")
+            progress.update(task, description="[bold green]Synchronizing mapping tables...[/]")
+            time.sleep(0.5)
+            
+        rprint(f"✨ [bold green]Success:[/] {result.get('message')}")
+        rprint("[dim italic]ℹ️  Persistent mappings updated via LLM reasoning & Ontology alignment.[/]")
+    except Exception as e:
+        rprint(f"[bold red]Healing aborted:[/] {e}")
+
 
 # --- Runtime Command (Existing functionality) ---
 
