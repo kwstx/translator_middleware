@@ -10,6 +10,17 @@ from app.core.security import require_scopes
 router = APIRouter(prefix="/discovery", tags=["Discovery"], dependencies=[require_scopes([])])
 
 
+@router.get("/agents", response_model=List[AgentRegistry])
+async def list_agents(db: Session = Depends(get_session)):
+    """
+    List all registered agents.
+    """
+    stmt = select(AgentRegistry)
+    results = await db.execute(stmt)
+    agents = results.scalars().all()
+    return agents
+
+
 class AgentDiscoveryRequest(BaseModel):
     protocols: List[str] = Field(
         ..., description="List of protocols supported by the agent"

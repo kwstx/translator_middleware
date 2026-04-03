@@ -59,6 +59,21 @@ async def ingest_cli(
     tool = await service.ingest_cli_help(command, agent_uuid)
     return tool
 
+
+@router.post("/ingest/docs", status_code=status.HTTP_201_CREATED)
+async def ingest_docs(
+    docs_text: str = Body(..., embed=True),
+    agent_id: str = Body(..., embed=True),
+    db: Session = Depends(get_session)
+):
+    """
+    Ingests tools from partial documentation text using LLM extraction.
+    """
+    service = RegistryService(db)
+    agent_uuid = uuid.UUID(agent_id)
+    tool = await service.extract_from_docs(docs_text, agent_uuid)
+    return tool
+
 @router.get("/tools")
 async def list_tools(db: Session = Depends(get_session)):
     """
