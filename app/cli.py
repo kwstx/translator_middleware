@@ -1211,22 +1211,35 @@ def trace_detail(
         rprint(f"[bold red]Failed to fetch trace details:[/] {e}")
 
 
-# --- Runtime Command (Existing functionality) ---
+# --- Runtime Command ---
+
+ENGRAM_BANNER = r"""
+[bold cyan]
+  ███████╗███╗   ██╗ ██████╗ ██████╗  █████╗ ███╗   ███╗
+  ██╔════╝████╗  ██║██╔════╝ ██╔══██╗██╔══██╗████╗ ████║
+  █████╗  ██╔██╗ ██║██║  ███╗██████╔╝███████║██╔████╔██║
+  ██╔══╝  ██║╚██╗██║██║   ██║██╔══██╗██╔══██║██║╚██╔╝██║
+  ███████╗██║ ╚████║╚██████╔╝██║  ██║██║  ██║██║ ╚═╝ ██║
+  ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝
+[/bold cyan]"""
 
 @app.command()
 def run(
     host: str = typer.Option("127.0.0.1", help="Host to bind the backend"),
     port: int = typer.Option(8000, help="Port to run the backend"),
-    debug: bool = typer.Option(False, "--debug", help="Start in debug mode")
+    debug: bool = typer.Option(False, "--debug", help="Start TUI dashboard instead of REPL"),
 ):
     """
-    Start the Engram Protocol Bridge backend and TUI dashboard.
+    Start the Engram Protocol Bridge — interactive CLI mode.
     """
-    # Start the runtime using the built-in logic
-    _start_legacy_runtime(host, port, "debug" if debug else None)
+    if debug:
+        _start_debug_tui(host, port)
+        return
+    _start_interactive_cli(host, port)
 
-def _start_legacy_runtime(host: str, port: int, initial_screen: Optional[str]):
-    """Refactored version of the original start_runtime logic."""
+
+def _start_debug_tui(host: str, port: int):
+    """Launch backend + TUI dashboard for visual debugging."""
     try:
         import uvicorn
         from app.main import app as fastapi_app
@@ -1235,46 +1248,154 @@ def _start_legacy_runtime(host: str, port: int, initial_screen: Optional[str]):
         rprint(f"❌ [bold red]Error:[/] Missing dependencies: {e}")
         return
 
-    rprint(Panel.fit(
-        "[bold orange1] ENGRAM PROTOCOL BRIDGE [/]\n[dim]Multi-Protocol Semantic Agent Translation[/]",
-        subtitle=f"[bold]v0.1.0 | Gateway: {host}:{port}[/]",
-        border_style="orange1"
-    ))
-
-    if initial_screen == "debug":
-        # Start API in background thread
-        def run_api():
-            try:
-                import uvicorn
-                from app.main import app as fastapi_app
-                uvicorn.run(fastapi_app, host=host, port=port, log_level="warning", access_log=False)
-            except Exception as e:
-                rprint(f"\n❌ [bold red]Backend Failed:[/] {e}")
-                os._exit(1)
-        api_thread = threading.Thread(target=run_api, daemon=True)
-        api_thread.start()
-        time.sleep(1.5)
-        rprint(" ✅ [bold green]Backend Ready.[/]")
-        
-        # Start TUI
+    def run_api():
         try:
-            from tui.app import EngramTUI
-            tui = EngramTUI(base_url=f"http://{host}:{port}/api/v1")
-            tui.initial_screen = initial_screen
-            tui.run()
-        except Exception as e:
-            rprint(f"❌ [bold red]TUI Error:[/] {e}")
-    else:
-        # CLI Mode: Run API in foreground
-        rprint("[dim]Use --debug to launch the live TUI dashboard.[/dim]")
-        try:
-            import uvicorn
-            from app.main import app as fastapi_app
             uvicorn.run(fastapi_app, host=host, port=port, log_level="warning", access_log=False)
         except Exception as e:
             rprint(f"\n❌ [bold red]Backend Failed:[/] {e}")
             os._exit(1)
-        sys.exit(1)
+
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+    time.sleep(1.5)
+
+    try:
+        tui = EngramTUI(base_url=f"http://{host}:{port}/api/v1")
+        tui.initial_screen = "debug"
+        tui.run()
+    except Exception as e:
+        rprint(f"❌ [bold red]TUI Error:[/] {e}")
+
+
+def _start_interactive_cli(host: str, port: int):
+    """Start backend in background, then drop into an interactive REPL."""
+    import io
+    import logging
+
+    # ── 1. Suppress ALL noisy module‑level output during import & boot ──
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()
+
+    # Also silence loggers that print during import
+    logging.disable(logging.CRITICAL)
+
+    try:
+        import uvicorn
+        from app.main import app as fastapi_app
+    except ImportError as e:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        logging.disable(logging.NOTSET)
+        rprint(f"❌ [bold red]Error:[/] Missing dependencies: {e}")
+        return
+
+    # ── 2. Start the backend in a daemon thread ──
+    server_ready = threading.Event()
+    server_error = [None]
+
+    class _ReadyServer(uvicorn.Server):
+        async def startup(self, sockets=None):
+            await super().startup(sockets=sockets)
+            server_ready.set()
+
+    config = uvicorn.Config(
+        fastapi_app,
+        host=host,
+        port=port,
+        log_level="critical",
+        access_log=False,
+    )
+    server = _ReadyServer(config)
+
+    def _serve():
+        try:
+            server.run()
+        except Exception as e:
+            server_error[0] = e
+            server_ready.set()
+
+    api_thread = threading.Thread(target=_serve, daemon=True)
+    api_thread.start()
+
+    # Wait for the server to be ready (or fail)
+    server_ready.wait(timeout=60)
+
+    # ── 3. Restore stdout/stderr and logging ──
+    sys.stdout, sys.stderr = old_stdout, old_stderr
+    logging.disable(logging.NOTSET)
+
+    if server_error[0]:
+        rprint(f"❌ [bold red]Backend failed to start:[/] {server_error[0]}")
+        return
+
+    # ── 4. Clear screen and show banner ──
+    os.system("cls" if os.name == "nt" else "clear")
+    rprint(ENGRAM_BANNER)
+    rprint(
+        "  [dim]Translate between AI agent protocols[/dim]\n"
+        "  [dim]from your terminal.[/dim]\n"
+    )
+    rprint(f"  [dim]Gateway:[/dim] [bold]http://{host}:{port}[/bold]")
+    rprint(f"  [dim]API docs:[/dim] [bold]http://{host}:{port}/docs[/bold]\n")
+
+    # ── 5. Interactive REPL ──
+    console = Console()
+
+    while True:
+        try:
+            cmd = console.input("[bold blue]$ engram [/bold blue]").strip()
+        except (EOFError, KeyboardInterrupt):
+            rprint("\n[dim]Shutting down...[/dim]")
+            break
+
+        if not cmd:
+            continue
+        if cmd in ("exit", "quit", "q"):
+            rprint("[dim]Shutting down...[/dim]")
+            break
+        if cmd == "clear":
+            os.system("cls" if os.name == "nt" else "clear")
+            rprint(ENGRAM_BANNER)
+            continue
+        if cmd == "help":
+            _print_repl_help()
+            continue
+
+        # Delegate to the Typer CLI by re‑invoking it as a subprocess
+        # but pointed at the already‑running backend.
+        parts = cmd.split()
+        full_cmd = f'"{sys.executable}" "{os.path.abspath(__file__)}" {" ".join(parts)}'
+        os.system(full_cmd)
+        print()  # breathing room after command output
+
+
+def _print_repl_help():
+    """Display available REPL commands."""
+    table = Table(
+        title="Available Commands",
+        box=box.ROUNDED,
+        border_style="cyan",
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("Command", style="bold cyan", min_width=25)
+    table.add_column("Description", style="dim")
+    table.add_row("tools list", "List all registered tools")
+    table.add_row("tools search <query>", "Search tools by name or tag")
+    table.add_row("register openapi <url>", "Register a tool from OpenAPI spec")
+    table.add_row("register command <cmd>", "Register a shell command as a tool")
+    table.add_row("route test <tool>", "Test routing decision for a tool")
+    table.add_row("route list", "Show all tools with routing stats")
+    table.add_row("trace list", "List recent execution traces")
+    table.add_row("trace <id>", "Inspect a specific trace")
+    table.add_row("heal status", "Show self-healing reconciliation status")
+    table.add_row("heal now", "Trigger immediate repair loop")
+    table.add_row("sync list", "List sync connections")
+    table.add_row("auth whoami", "Show current identity & scopes")
+    table.add_row("clear", "Clear the screen")
+    table.add_row("exit", "Shut down the gateway")
+    rprint(table)
+
 
 if __name__ == "__main__":
     app()
