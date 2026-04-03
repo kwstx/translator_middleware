@@ -1,31 +1,45 @@
 @echo off
-REM Engram Single-Command Entry Point
-REM This script initializes the backend and launches the TUI environment.
+REM Engram Self-Healing Entry Point
+REM This script initializes the backend, handles dependencies, and launches the TUI environment.
 REM Usage: .\engram.bat
 
 setlocal
 set PYTHONPATH=%~dp0
 
-REM 1. Check if the venv exists and use its Python directly to avoid global version conflicts
-if exist "%~dp0venv\Scripts\python.exe" (
-    set PY_EXE="%~dp0venv\Scripts\python.exe"
-    echo [INFO] Using Virtual Environment: %~dp0venv
-) else (
-    set PY_EXE=python
-    echo [WARNING] Virtual environment NOT found at %~dp0venv. Using global python.
+REM 1. Initialize Virtual Environment if missing
+if not exist "%~dp0venv" (
+    echo [INFO] Virtual environment NOT found. Creating one...
+    python -m venv "%~dp0venv"
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Failed to create venv. Please ensure Python is installed and in your PATH.
+        exit /b 1
+    )
 )
 
-REM 2. Run the Engram CLI
+set PY_EXE="%~dp0venv\Scripts\python.exe"
+
+REM 2. Dependency Check (Fast Import Test)
+echo [INFO] Checking dependencies...
+%PY_EXE% -c "import keyring, typer, rich, httpx, jwt, pydantic, yaml" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo [INFO] Missing or broken dependencies. Synchronizing environment...
+    %PY_EXE% -m pip install --upgrade pip >nul 2>&1
+    %PY_EXE% -m pip install -r "%~dp0requirements.txt"
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Failed to install dependencies. Check your internet connection or requirements.txt.
+        exit /b 1
+    )
+    echo [SUCCESS] Environment synchronized.
+)
+
+REM 3. Run the Engram CLI
 %PY_EXE% "%~dp0app\cli.py" %*
 
-REM 3. Error Handling
+REM 4. Error Handling
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo [ERROR] Engram failed to start.
-    echo.
-    echo TIP: If you see "No module named pydantic_core", run these two commands to reset your environment to Python 3.12:
-    echo   1. py -3.12 -m venv venv
-    echo   2. .\venv\Scripts\python.exe -m pip install -r requirements.txt
+    echo [ERROR] Engram exited with code %ERRORLEVEL%.
+    echo TIP: If the error persists, try deleting the 'venv' folder and running this script again.
     echo.
     pause
 )

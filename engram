@@ -1,21 +1,51 @@
 #!/bin/bash
-# Engram Single-Command Entry Point for Unix-like systems (Linux, macOS)
-# This script initializes the backend and launches the TUI environment.
+# Engram Self-Healing Entry Point (Linux, macOS)
+# This script initializes the backend, handles dependencies, and launches the TUI environment.
 # Usage: ./engram [command]
 
-# Get the directory of this script
+# Set DIR to the script's directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
-# Set PYTHONPATH to the script's directory
 export PYTHONPATH="$DIR"
 
-# Run the Engram CLI
-python3 "$DIR/app/cli.py" "$@"
+VENV_DIR="$DIR/venv"
+PY_EXE="$VENV_DIR/bin/python3"
 
-# Check if it failed
+# 1. Initialize Virtual Environment if missing
+if [ ! -d "$VENV_DIR" ]; then
+    echo "[INFO] Virtual environment NOT found. Creating one..."
+    python3 -m venv "$VENV_DIR"
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Failed to create venv. Is python3-venv installed?"
+        exit 1
+    fi
+fi
+
+# 2. Check for python binary (handles different system locations)
+if [ ! -f "$PY_EXE" ]; then
+    PY_EXE="$VENV_DIR/bin/python"
+fi
+
+# 3. Dependency Check (Fast Import Test)
+echo "[INFO] Checking dependencies..."
+$PY_EXE -c "import keyring, typer, rich, httpx, jwt, pydantic, yaml" > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "[INFO] Missing or broken dependencies. Synchronizing environment..."
+    $PY_EXE -m pip install --upgrade pip > /dev/null 2>&1
+    $PY_EXE -m pip install -r "$DIR/requirements.txt"
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Failed to install dependencies. Check your connection or requirements.txt."
+        exit 1
+    fi
+    echo "[SUCCESS] Environment synchronized."
+fi
+
+# 4. Run the Engram CLI
+$PY_EXE "$DIR/app/cli.py" "$@"
+
+# 5. Error Handling
 if [ $? -ne 0 ]; then
     echo ""
-    echo "[ERROR] Engram failed to start."
-    echo "Please ensure all dependencies are installed: pip install -r requirements.txt"
+    echo "[ERROR] Engram failed to start (Return Code: $?)."
+    echo "TIP: Try 'rm -rf venv' and rerun this script to reset your environment."
     exit 1
 fi
