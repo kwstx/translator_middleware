@@ -32,8 +32,10 @@ if [ $? -ne 0 ]; then
     echo "[INFO] Missing or broken dependencies. Synchronizing environment..."
     $PY_EXE -m pip install --upgrade pip > /dev/null 2>&1
     $PY_EXE -m pip install -r "$DIR/requirements.txt"
+    # Double-check imports as pip may return non-zero for minor warnings/conflicts
+    $PY_EXE -c "import keyring, typer, rich, httpx, jwt, pydantic, yaml" > /dev/null 2>&1
     if [ $? -ne 0 ]; then
-        echo "[ERROR] Failed to install dependencies. Check your connection or requirements.txt."
+        echo "[ERROR] Environment synchronization failed. Check your connection or requirements.txt."
         exit 1
     fi
     echo "[SUCCESS] Environment synchronized."

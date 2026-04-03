@@ -25,8 +25,10 @@ if %ERRORLEVEL% neq 0 (
     echo [INFO] Missing or broken dependencies. Synchronizing environment...
     %PY_EXE% -m pip install --upgrade pip >nul 2>&1
     %PY_EXE% -m pip install -r "%~dp0requirements.txt"
+    REM Double-check imports before failing, as pip may return 1 for minor warnings
+    %PY_EXE% -c "import keyring, typer, rich, httpx, jwt, pydantic, yaml" >nul 2>&1
     if %ERRORLEVEL% neq 0 (
-        echo [ERROR] Failed to install dependencies. Check your internet connection or requirements.txt.
+        echo [ERROR] Environment synchronization failed. Check your internet connection or requirements.txt.
         exit /b 1
     )
     echo [SUCCESS] Environment synchronized.
