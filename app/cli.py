@@ -1589,7 +1589,7 @@ def _start_interactive_cli(host: str, port: int):
     os.system("cls" if os.name == "nt" else "clear")
     rprint(ENGRAM_BANNER)
     rprint(
-        "  [dim]Translate between AI agent protocols[/dim]\n"
+        "  [dim]Connect any AI agent to any tool[/dim]\n"
         "  [dim]from your terminal.[/dim]\n"
     )
     rprint(f"  [dim]Gateway:[/dim] [bold]http://{host}:{port}[/bold]")
