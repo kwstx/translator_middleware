@@ -40,6 +40,7 @@ from rich.tree import Tree
 from rich import print as rprint
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
+from rich.live import Live
 
 # Constants
 APP_NAME = "engram"
@@ -1470,15 +1471,72 @@ def handoff_test(
 
 # --- Runtime Command ---
 
-ENGRAM_BANNER = r"""
-[bold cyan]
-  ███████╗███╗   ██╗ ██████╗ ██████╗  █████╗ ███╗   ███╗
-  ██╔════╝████╗  ██║██╔════╝ ██╔══██╗██╔══██╗████╗ ████║
-  █████╗  ██╔██╗ ██║██║  ███╗██████╔╝███████║██╔████╔██║
-  ██╔══╝  ██║╚██╗██║██║   ██║██╔══██╗██╔══██║██║╚██╔╝██║
-  ███████╗██║ ╚████║╚██████╔╝██║  ██║██║  ██║██║ ╚═╝ ██║
-  ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝
-[/bold cyan]"""
+_BANNER_LINES = [
+    "  ███████╗███╗   ██╗ ██████╗ ██████╗  █████╗ ███╗   ███╗",
+    "  ██╔════╝████╗  ██║██╔════╝ ██╔══██╗██╔══██╗████╗ ████║",
+    "  █████╗  ██╔██╗ ██║██║  ███╗██████╔╝███████║██╔████╔██║",
+    "  ██╔══╝  ██║╚██╗██║██║   ██║██╔══██╗██╔══██║██║╚██╔╝██║",
+    "  ███████╗██║ ╚████║╚██████╔╝██║  ██║██║  ██║██║ ╚═╝ ██║",
+    "  ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝",
+]
+
+
+def _static_banner() -> Text:
+    """Return the ENGRAM banner as a static bold-cyan Rich Text."""
+    text = Text()
+    for line in _BANNER_LINES:
+        text.append(line + "\n", style="bold white")
+    return text
+
+
+def _animate_banner(console: Console | None = None):
+    """Play the ENGRAM banner animation: white -> blue sweep (bottom-up) -> back to white,
+    then settle on bold cyan."""
+    if console is None:
+        console = Console()
+
+    white = (210, 215, 220)
+    blue = (60, 120, 255)
+    num_lines = len(_BANNER_LINES)
+    frames_per_phase = 28
+    frame_delay = 0.035
+
+    def _lerp_color(t: float, c_from: tuple, c_to: tuple) -> tuple:
+        t = max(0.0, min(1.0, t))
+        return tuple(int(a + (b - a) * t) for a, b in zip(c_from, c_to))
+
+    def _build_frame(wave_pos: float, color_from: tuple, color_to: tuple) -> Text:
+        text = Text()
+        for i, line in enumerate(_BANNER_LINES):
+            # line_pos: 0 = bottom line, num_lines-1 = top line
+            line_pos = num_lines - 1 - i
+            distance = wave_pos - line_pos
+            t = max(0.0, min(1.0, (distance + 1.0) / 2.0))
+            r, g, b = _lerp_color(t, color_from, color_to)
+            text.append(line + "\n", style=f"bold rgb({r},{g},{b})")
+        return text
+
+    try:
+        with Live(console=console, refresh_per_second=30, transient=True) as live:
+            # Phase 1: white -> blue, wave sweeps bottom to top
+            for frame in range(frames_per_phase + 6):
+                wave_pos = (frame / frames_per_phase) * (num_lines + 1) - 1
+                live.update(_build_frame(wave_pos, white, blue))
+                time.sleep(frame_delay)
+
+            # Tiny hold at full blue
+            time.sleep(0.12)
+
+            # Phase 2: blue -> white, wave sweeps bottom to top
+            for frame in range(frames_per_phase + 6):
+                wave_pos = (frame / frames_per_phase) * (num_lines + 1) - 1
+                live.update(_build_frame(wave_pos, blue, white))
+                time.sleep(frame_delay)
+    except Exception:
+        pass  # Graceful fallback if terminal doesn't support Live
+
+    # Final resting state: white (matches animation end)
+    console.print(_static_banner(), end="")
 
 @app.command()
 def run(
@@ -1587,7 +1645,7 @@ def _start_interactive_cli(host: str, port: int):
 
     # -- 4. Clear screen and show banner --
     os.system("cls" if os.name == "nt" else "clear")
-    rprint(ENGRAM_BANNER)
+    _animate_banner()
     rprint(
         "  [dim]Connect any AI agent to any tool[/dim]\n"
         "  [dim]from your terminal.[/dim]\n"
@@ -1612,7 +1670,7 @@ def _start_interactive_cli(host: str, port: int):
             break
         if cmd == "clear":
             os.system("cls" if os.name == "nt" else "clear")
-            rprint(ENGRAM_BANNER)
+            rprint(_static_banner())
             continue
         if cmd == "help":
             _print_repl_help()
