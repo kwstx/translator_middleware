@@ -305,7 +305,7 @@ def auth_whoami():
         scopes = payload.get("scopes", {})
         
         for tool, perms in scopes.items():
-            tool_node = perm_node.add(f"🛠️ [magenta]{tool}[/]")
+            tool_node = perm_node.add(f"[magenta]{tool}[/]")
             for p in perms:
                 tool_node.add(f"[dim]{p}[/]")
         
@@ -316,11 +316,11 @@ def auth_whoami():
             semantic_node.add(f"[italic blue]{ss}[/]")
             # Provide helpful translation for common scopes
             if "execute" in ss:
-                semantic_node.add("  └─ [dim]Can invoke cross-protocol tool translations[/]")
+                semantic_node.add("  |- [dim]Can invoke cross-protocol tool translations[/]")
             if "read" in ss:
-                semantic_node.add("  └─ [dim]Can query ontology metadata and tool catalogs[/]")
+                semantic_node.add("  |- [dim]Can query ontology metadata and tool catalogs[/]")
 
-        rprint(Panel(tree, title="✨ Current Session Identity", border_style="cyan", expand=False))
+        rprint(Panel(tree, title="Current Session Identity", border_style="cyan", expand=False))
         
         # Optional: verify with backend if possible
         try:
@@ -671,7 +671,7 @@ def register_api(
             time.sleep(1)
             
             # Simulated auto-healing result
-            rprint("[dim italic]ℹ️  3 schema mismatches resolved via ontology alignment[/]")
+            rprint("[dim italic]Info: 3 schema mismatches resolved via ontology alignment[/]")
             progress.update(task1, description="[bold green]Registration Complete![/]")
             
         except Exception as e:
@@ -777,7 +777,7 @@ def heal_status(
                 status_text = "AUTO-REPAIR" if conf >= 0.7 else "PENDING-REVIEW"
                 
                 drift_table.add_row(
-                    f"{drift['source_protocol']} → {drift['target_protocol']}",
+                    f"{drift['source_protocol']} -> {drift['target_protocol']}",
                     drift["source_field"],
                     drift["suggested_mapping"] or f"[red]RESOLVE MANUALLY[/]",
                     f"{conf:.1%}",
@@ -789,15 +789,15 @@ def heal_status(
         # Table 2: Active Mappings
         mapping_table = Table(title="[LINK] Persistent Semantic Mappings", border_style="bold green", box=rich.box.ROUNDED)
         mapping_table.add_column("Route", style="cyan")
-        mapping_table.add_column("Current Mappings (Source → Target)", style="white")
+        mapping_table.add_column("Current Mappings (Source -> Target)", style="white")
         mapping_table.add_column("Ver.", style="dim")
         
         mappings = data.get("active_mappings", [])
         for m in mappings:
             equivs = m.get("semantic_equivalents", {})
-            rows = [f"[cyan]{k}[/] → [green]{v}[/]" for k, v in equivs.items()]
+            rows = [f"[cyan]{k}[/] -> [green]{v}[/]" for k, v in equivs.items()]
             mapping_table.add_row(
-                f"{m['source_protocol']} → {m['target_protocol']}",
+                f"{m['source_protocol']} -> {m['target_protocol']}",
                 "\n".join(rows) if rows else "[dim]No equivalents[/]",
                 str(m["version"])
             )
@@ -894,7 +894,7 @@ def route_test(
         table.add_column("Success", style="green")
         
         for cand in result.get("candidates", []):
-            is_selected = "[bold green]✓[/] " if cand["backend"] == backend else "  "
+            is_selected = "[bold green]*[/] " if cand["backend"] == backend else "  "
             table.add_row(
                 f"{is_selected}{cand['backend']}",
                 f"{cand['composite_score']:.2f}",
@@ -1204,7 +1204,7 @@ def trace_detail(
         if mappings:
             mapping_sub = ont_node.add("Synthesized Field Mappings")
             for k, v in mappings.items():
-                mapping_sub.add(f"[cyan]{k}[/] → [green]{v}[/]")
+                mapping_sub.add(f"[cyan]{k}[/] -> [green]{v}[/]")
 
         # Assemble Group for Output
         group = Group(
@@ -1215,7 +1215,7 @@ def trace_detail(
         ctx.console.print(group)
         
         if trace.get("error"):
-            rprint(Panel(trace["error"], title="❌ Error Stack", border_style="red"))
+            rprint(Panel(trace["error"], title="Error Stack", border_style="red"))
 
     except Exception as e:
         rprint(f"[bold red]Failed to fetch trace details:[/] {e}")
@@ -1288,7 +1288,7 @@ def evolve_status():
             change_text = "\n\n".join(changes) if changes else "[dim]Internal metadata optimization[/]"
             
             table.add_row(
-                f"[bold cyan]{p['tool_name']}[/]\n[dim]{p['previous_version']} → {p['new_version']}[/]",
+                f"[bold cyan]{p['tool_name']}[/]\n[dim]{p['previous_version']} -> {p['new_version']}[/]",
                 p["change_type"].replace("_", " ").title(),
                 change_text,
                 f"{p['confidence_score']:.1%}",
@@ -1321,7 +1321,7 @@ def evolve_apply(
             
         # Show Clean Diff
         rprint(f"\n[bold]Previewing Evolution for Tool:[/] [cyan]{proposal['tool_name']}[/]")
-        rprint(f"[bold]Version Change:[/] [dim]{proposal['previous_version']} → {proposal['new_version']}[/]\n")
+        rprint(f"[bold]Version Change:[/] [dim]{proposal['previous_version']} -> {proposal['new_version']}[/]\n")
         
         diff_payload = proposal.get("diff_payload", {}) or {}
         
@@ -1451,7 +1451,7 @@ def handoff_test(
         
         protocols = tree.add("Bridged Protocols")
         for p in result.get("bridged_protocols", []):
-            protocols.add(f"• {p}")
+            protocols.add(f"- {p}")
             
         transferred = tree.add("Transferred State (Redis-backed)")
         state_data = result.get("transferred_state", {})
@@ -1502,14 +1502,14 @@ def _start_debug_tui(host: str, port: int):
         from app.main import app as fastapi_app
         from tui.app import EngramTUI
     except ImportError as e:
-        rprint(f"❌ [bold red]Error:[/] Missing dependencies: {e}")
+        rprint(f"[bold red]Error:[/] Missing dependencies: {e}")
         return
 
     def run_api():
         try:
             uvicorn.run(fastapi_app, host=host, port=port, log_level="warning", access_log=False)
         except Exception as e:
-            rprint(f"\n❌ [bold red]Backend Failed:[/] {e}")
+            rprint(f"\n[bold red]Backend Failed:[/] {e}")
             os._exit(1)
 
     api_thread = threading.Thread(target=run_api, daemon=True)
@@ -1521,7 +1521,7 @@ def _start_debug_tui(host: str, port: int):
         tui.initial_screen = "debug"
         tui.run()
     except Exception as e:
-        rprint(f"❌ [bold red]TUI Error:[/] {e}")
+        rprint(f"[bold red]TUI Error:[/] {e}")
 
 
 def _start_interactive_cli(host: str, port: int):
@@ -1529,7 +1529,7 @@ def _start_interactive_cli(host: str, port: int):
     import io
     import logging
 
-    # ── 1. Suppress ALL noisy module‑level output during import & boot ──
+    # -- 1. Suppress ALL noisy module-level output during import & boot --
     old_stdout, old_stderr = sys.stdout, sys.stderr
     sys.stdout = io.StringIO()
     sys.stderr = io.StringIO()
@@ -1543,10 +1543,10 @@ def _start_interactive_cli(host: str, port: int):
     except ImportError as e:
         sys.stdout, sys.stderr = old_stdout, old_stderr
         logging.disable(logging.NOTSET)
-        rprint(f"❌ [bold red]Error:[/] Missing dependencies: {e}")
+        rprint(f"[bold red]Error:[/] Missing dependencies: {e}")
         return
 
-    # ── 2. Start the backend in a daemon thread ──
+    # -- 2. Start the backend in a daemon thread --
     server_ready = threading.Event()
     server_error = [None]
 
@@ -1577,15 +1577,15 @@ def _start_interactive_cli(host: str, port: int):
     # Wait for the server to be ready (or fail)
     server_ready.wait(timeout=60)
 
-    # ── 3. Restore stdout/stderr and logging ──
+    # -- 3. Restore stdout/stderr and logging --
     sys.stdout, sys.stderr = old_stdout, old_stderr
     logging.disable(logging.NOTSET)
 
     if server_error[0]:
-        rprint(f"❌ [bold red]Backend failed to start:[/] {server_error[0]}")
+        rprint(f"[bold red]Backend failed to start:[/] {server_error[0]}")
         return
 
-    # ── 4. Clear screen and show banner ──
+    # -- 4. Clear screen and show banner --
     os.system("cls" if os.name == "nt" else "clear")
     rprint(ENGRAM_BANNER)
     rprint(
@@ -1595,7 +1595,7 @@ def _start_interactive_cli(host: str, port: int):
     rprint(f"  [dim]Gateway:[/dim] [bold]http://{host}:{port}[/bold]")
     rprint(f"  [dim]API docs:[/dim] [bold]http://{host}:{port}/docs[/bold]\n")
 
-    # ── 5. Interactive REPL ──
+    # -- 5. Interactive REPL --
     console = Console()
 
     while True:
