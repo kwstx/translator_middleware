@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
     from rich import print as rprint
     from rich.panel import Panel
     rprint(Panel.fit(
-        "[bold green]✅ GATEWAY ACTIVE[/bold green]\n"
+        "[bold green][DONE] GATEWAY ACTIVE[/bold green]\n"
         "[dim]Listening on[/dim] [bold]http://127.0.0.1:8000[/bold]\n"
         "[dim]API docs at[/dim]  [bold]http://127.0.0.1:8000/docs[/bold]\n\n"
         "[dim]Open a new terminal and run[/dim] [bold cyan]./engram <command>[/bold cyan] [dim]to interact.[/dim]\n"

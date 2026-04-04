@@ -112,7 +112,7 @@ class CLIContext:
 
     def handle_auth_error(self, response):
         """Show helpful suggestions for authentication errors."""
-        rprint("\n[bold red]🔐 Authentication Required[/]")
+        rprint("\n[bold red][AUTH] Authentication Required[/]")
         rprint("Your session has expired or the token is invalid.")
         rprint("\n[bold cyan]Suggestions:[/]")
         rprint("  1. Run [bold green]engram auth login[/] to re-authenticate.")
@@ -264,7 +264,7 @@ def auth_login(
     """
     if token:
         state.set_token(token)
-        rprint("✅ [bold green]Token saved securely via keyring.[/]")
+        rprint("[OK] [bold green]Token saved securely via keyring.[/]")
         return
 
     login_url = f"{state.config.api_url}/api/v1/auth/login"
@@ -279,7 +279,7 @@ def auth_login(
     
     if input_token:
         state.set_token(input_token)
-        rprint("\n✅ [bold green]Login successful! Identity and permissions synced.[/]")
+        rprint("\n[bold green][OK] Login successful! Identity and permissions synced.[/]")
         auth_whoami()
     else:
         rprint("[bold red]Login aborted.[/]")
@@ -298,10 +298,10 @@ def auth_whoami():
         # Decode token to show claims
         payload = jwt.decode(token, options={"verify_signature": False})
         
-        tree = Tree(f"👤 [bold cyan]Identity:[/] {payload.get('sub', 'Unknown')}")
+        tree = Tree(f"[USER] [bold cyan]Identity:[/] {payload.get('sub', 'Unknown')}")
         
         # Scopes and Permissions
-        perm_node = tree.add("🔐 [bold green]Permissions (EAT Structured)[/]")
+        perm_node = tree.add("[AUTH] [bold green]Permissions (EAT Structured)[/]")
         scopes = payload.get("scopes", {})
         
         for tool, perms in scopes.items():
@@ -310,7 +310,7 @@ def auth_whoami():
                 tool_node.add(f"[dim]{p}[/]")
         
         # Semantic Scopes
-        semantic_node = tree.add("🧠 [bold yellow]Semantic Scopes (Ontology-based)[/]")
+        semantic_node = tree.add("[ONTOLOGY] [bold yellow]Semantic Scopes (Ontology-based)[/]")
         sem_scopes = payload.get("semantic_scopes", [])
         for ss in sem_scopes:
             semantic_node.add(f"[italic blue]{ss}[/]")
@@ -346,7 +346,7 @@ def auth_scope():
         payload = jwt.decode(token, options={"verify_signature": False})
         sem_scopes = payload.get("semantic_scopes", [])
         
-        table = Table(title="🧠 Semantic Access Scopes", box=rich.box.DOUBLE_EDGE)
+        table = Table(title="[ONTOLOGY] Semantic Access Scopes", box=rich.box.DOUBLE_EDGE)
         table.add_column("Scope Identifier", style="cyan")
         table.add_column("Ontology Context", style="magenta")
         table.add_column("Capability", style="green")
@@ -370,7 +370,7 @@ def auth_token_set(token: str):
     Manually set the Engram Authorization Token (EAT).
     """
     state.set_token(token)
-    rprint(f"✅ EAT token updated securely.")
+    rprint(f"[OK] EAT token updated securely.")
 
 @auth_app.command("status")
 def auth_status():
@@ -426,7 +426,7 @@ def config_set(
             setattr(state.config, key, value)
         
         state.save_config()
-        rprint(f"✅ Set [bold]{key}[/] to [bold]{value}[/]")
+        rprint(f"[OK] Set [bold]{key}[/] to [bold]{value}[/]")
     else:
         rprint(f"[bold red]Error:[/] Unknown config key '{key}'")
 
@@ -534,8 +534,7 @@ def tool_list(
 
             # 5. Render Rich Table
             table = Table(
-                title="🛠️ [bold]Engram Tool Catalog[/]",
-                subtitle="[dim]Custom tools are prioritized as universal self-healing bridge entries[/]",
+                title="[TOOL] [bold]Engram Tool Catalog[/]",
                 box=box.SIMPLE_HEAVY,
                 header_style="bold magenta",
                 show_lines=False
@@ -551,41 +550,44 @@ def tool_list(
             for t in final_tools:
                 # Backend Icon + Text
                 if t["backend"] == "MCP":
-                    backend_fmt = "🛠️ [bold blue]MCP[/]"
+                    backend_fmt = "[TOOL] [bold blue]MCP[/]"
                 elif t["backend"] == "CLI":
-                    backend_fmt = "💻 [bold green]CLI[/]"
+                    backend_fmt = "[CLI] [bold green]CLI[/]"
                 else:
-                    backend_fmt = "🚀 [bold yellow]Dual[/]" # Hybrid/Popular
+                    backend_fmt = "[DUAL] [bold yellow]Dual[/]" # Hybrid/Popular
                 
                 # Hero indicator for custom tools
-                hero_icon = "✨" if not t["is_popular"] else "📦"
+                hero_icon = "*" if not t["is_popular"] else ">"
                 
                 # Success Rate coloring
                 sr = t["success"]
                 color = "green" if sr >= 0.9 else "yellow" if sr >= 0.7 else "red"
                 success_fmt = f"[{color}]{sr:.1%}[/]"
                 
+                processed_name = t["name"].replace("—", "-")
+                processed_desc = t["description"].replace("—", "-")
+                
                 table.add_row(
                     hero_icon,
-                    t["name"],
+                    processed_name,
                     backend_fmt,
                     t["type"],
                     success_fmt,
-                    (t["description"][:60] + "...") if len(t["description"]) > 60 else t["description"]
+                    (processed_desc[:60] + "...") if len(processed_desc) > 60 else processed_desc
                 )
 
             ctx.console.print(table)
             rprint(f"\n[dim]Showing {len(final_tools)} active tools. Use [bold]--popular[/] to see pre-optimized integrations.[/]")
             if not query:
-                rprint("[dim italic]ℹ️  Universal tools are linked via semantic ontology for cross-protocol healing.[/]")
+                rprint("[dim italic][INFO] Universal tools are linked via semantic ontology for cross-protocol healing.[/]")
 
         except Exception as e:
             rprint(f"[bold red]Discovery Error:[/] {e}")
             if "Connection Error" in str(e):
-                rprint("\n[bold yellow]💡 Suggestion:[/] It looks like the Engram Bridge server is not running.")
+                rprint("\n[bold yellow][TIP] Suggestion:[/] It looks like the Engram Bridge server is not running.")
                 rprint("Try starting it in a new terminal with: [bold cyan]uvicorn app.main:app[/]\n")
             elif "500" in str(e):
-                rprint("\n[bold yellow]💡 Suggestion:[/] The server encountered an internal error.")
+                rprint("\n[bold yellow][TIP] Suggestion:[/] The server encountered an internal error.")
                 rprint("Check the server logs for details. If you're running locally, make sure your [bold].env[/] file exists and is correctly configured.\n")
 
 
@@ -683,7 +685,7 @@ def register_api(
         f"[bold green]Successfully registered:[/] {name}\n"
         f"[bold cyan]ID:[/] {tool_id}\n"
         f"[bold yellow]Test Command:[/] engram run --tool {name} --inspect",
-        title="✨ Registration Summary",
+        title="[*] Registration Summary",
         border_style="green"
     ))
 
@@ -729,7 +731,7 @@ def register_cli(
         f"[bold green]CLI Registered:[/] {name}\n"
         f"[bold cyan]ID:[/] {tool_id}\n"
         f"[bold yellow]Test Command:[/] engram run --tool {name} --help",
-        title="🚀 CLI Wrapper Success",
+        title="[START] CLI Wrapper Success",
         border_style="magenta"
     ))
 
@@ -756,7 +758,7 @@ def heal_status(
         data = ctx.request("GET", "/api/v1/reconciliation/status")
         
         # Table 1: Drifts
-        drift_table = Table(title="🔍 Semantic Drift Analysis", border_style="bold yellow", box=rich.box.ROUNDED)
+        drift_table = Table(title="[SEARCH] Semantic Drift Analysis", border_style="bold yellow", box=rich.box.ROUNDED)
         drift_table.add_column("Source Protocol", style="cyan")
         drift_table.add_column("Field Drift", style="magenta")
         drift_table.add_column("Ontology Match", style="green")
@@ -784,7 +786,7 @@ def heal_status(
         ctx.console.print(drift_table)
         
         # Table 2: Active Mappings
-        mapping_table = Table(title="🔗 Persistent Semantic Mappings", border_style="bold green", box=rich.box.ROUNDED)
+        mapping_table = Table(title="[LINK] Persistent Semantic Mappings", border_style="bold green", box=rich.box.ROUNDED)
         mapping_table.add_column("Route", style="cyan")
         mapping_table.add_column("Current Mappings (Source → Target)", style="white")
         mapping_table.add_column("Ver.", style="dim")
@@ -834,8 +836,8 @@ def heal_now():
             progress.update(task, description="[bold green]Synchronizing mapping tables...[/]")
             time.sleep(0.5)
             
-        rprint(f"✨ [bold green]Success:[/] {result.get('message')}")
-        rprint("[dim italic]ℹ️  Persistent mappings updated via LLM reasoning & Ontology alignment.[/]")
+        rprint(f"[OK] [bold green]Success:[/] {result.get('message')}")
+        rprint("[dim italic][INFO] Persistent mappings updated via LLM reasoning & Ontology alignment.[/]")
     except Exception as e:
         rprint(f"[bold red]Healing aborted:[/] {e}")
 
@@ -880,10 +882,10 @@ def route_test(
             f"[dim italic]Reasoning: {reasoning}[/]"
         )
         
-        rprint(Panel(panel_content, title="🚀 Optimal Routing Decision", border_style="bold cyan", expand=False))
+        rprint(Panel(panel_content, title="[START] Optimal Routing Decision", border_style="bold cyan", expand=False))
         
         # Comparison Table
-        table = Table(title="📊 Alternative Backends Comparison", box=rich.box.SIMPLE)
+        table = Table(title="[STATS] Alternative Backends Comparison", box=rich.box.SIMPLE)
         table.add_column("Backend", style="cyan")
         table.add_column("Score", style="yellow")
         table.add_column("Sim.", style="dim")
@@ -914,7 +916,7 @@ def route_list():
     try:
         results = ctx.request("GET", "/api/v1/routing/list")
         
-        table = Table(title="📈 Global Tool Performance Stats", box=rich.box.DOUBLE_EDGE, border_style="blue")
+        table = Table(title="[GRAPH] Global Tool Performance Stats", box=rich.box.DOUBLE_EDGE, border_style="blue")
         table.add_column("Tool Name", style="cyan", no_wrap=True)
         table.add_column("Backend", style="magenta")
         table.add_column("Avg Latency", style="yellow", justify="right")
@@ -1015,7 +1017,7 @@ def sync_add(
             response = state.request("POST", "/events/sync", json=payload)
         
         if response.status_code == 200:
-            rprint(f"✅ [bold green]Sync successfully added![/] Direction: [bold]{direction}[/]")
+            rprint(f"[OK] [bold green]Sync successfully added![/] Direction: [bold]{direction}[/]")
             rprint(f"Ontology mapping established for tool [dim]{tool_id}[/].")
         else:
             state.handle_auth_error(response)
@@ -1162,30 +1164,30 @@ def trace_detail(
         # 1. Summary Panel (Natural Language)
         summary_panel = Panel(
             Text(summary, justify="left", style="italic white"),
-            title="[bold yellow]🤖 Routing & Healing Summary[/]",
+            title="[AI] [bold yellow]Routing & Healing Summary[/]",
             border_style="yellow",
             padding=(1, 2)
         )
         
         # 2. Trace Details (Semantic Trace Tree)
-        tree = Tree(f"🔍 [bold cyan]Semantic Trace:[/] {actual_id}")
+        tree = Tree(f"[SEARCH] [bold cyan]Semantic Trace:[/] {actual_id}")
         
         # Path Info
         success_status = "[bold green]PASS[/]" if trace.get("success") else "[bold red]FAIL[/]"
-        path_node = tree.add(f"🛤️ [bold magenta]Execution Path[/] [{success_status}]")
+        path_node = tree.add(f"[PATH] [bold magenta]Execution Path[/] [{success_status}]")
         path_node.add(f"Tool Selection: [bold]{trace.get('tool_name', 'N/A')}[/]")
         path_node.add(f"Routing Choice: [bold yellow]{trace.get('routing_choice', 'N/A')}[/]")
         path_node.add(f"Actual Backend: [dim]{trace.get('backend_used', 'N/A')}[/]")
         path_node.add(f"Latency: [white]{trace.get('latency_ms', 0.0):.1f}ms[/]")
         
         # Scoring reasoning
-        scores = path_node.add("📊 [bold green]Performance Weights[/]")
+        scores = path_node.add("[STATS] [bold green]Performance Weights[/]")
         scores.add(f"Semantic Similarity: [dim]{trace.get('similarity_score', 0.0):.3f}[/]")
         scores.add(f"Composite Score: [dim]{trace.get('composite_score', 0.0):.3f}[/]")
         scores.add(f"Token Efficiency: [white]{trace.get('token_cost_est', 0.0):.1f} tokens[/]")
         
         # Reconciliation Steps (Healing)
-        heal_node = tree.add("🛠️ [bold orange1]Self-Healing Steps[/]")
+        heal_node = tree.add("[REPAIR] [bold orange1]Self-Healing Steps[/]")
         steps = trace.get("reconciliation_steps", [])
         if not steps:
             heal_node.add("[dim italic]No drift detected; no healing required.[/]")
@@ -1194,7 +1196,7 @@ def trace_detail(
                 heal_node.add(f"[italic]{step}[/]")
         
         # Ontological Interpretation
-        ont_node = tree.add("🧠 [bold blue]Ontological Alignment[/]")
+        ont_node = tree.add("[ONTOLOGY] [bold blue]Ontological Alignment[/]")
         ont_node.add(f"Context: [italic]{trace.get('ontological_interpretation', 'N/A')}[/]")
         
         mappings = trace.get("field_mappings", {})
@@ -1206,7 +1208,7 @@ def trace_detail(
         # Assemble Group for Output
         group = Group(
             summary_panel,
-            Panel(tree, title="✨ Full Semantic Inspection", border_style="cyan"),
+            Panel(tree, title="[*] Full Semantic Inspection", border_style="cyan"),
         )
         
         ctx.console.print(group)
@@ -1247,7 +1249,7 @@ def evolve_status():
                 f"[bold cyan]Total Historical Evolutions:[/] [bold magenta]{total_evolutions}[/]",
                 f"[bold cyan]Last ML Update:[/] [dim]{last_upd}[/]"
             ),
-            title="🧠 [bold]Self-Evolving Tools Dashboard[/]",
+            title="[ONTOLOGY] [bold]Self-Evolving Tools Dashboard[/]",
             border_style="cyan",
             padding=(1, 2)
         )
@@ -1260,7 +1262,7 @@ def evolve_status():
             return
             
         table = Table(
-            title="✨ [bold]Pending Tool Refinements[/]",
+            title="[*] [bold]Pending Tool Refinements[/]",
             box=box.ROUNDED,
             header_style="bold magenta",
             show_lines=True
@@ -1346,7 +1348,7 @@ def evolve_apply(
             progress.add_task("apply")
             result = ctx.request("POST", f"/api/v1/evolution/apply/{proposal['id']}")
             
-        rprint(f"✅ [bold green]Evolution successful![/] Tool is now running version [bold]{result['new_version']}[/].")
+        rprint(f"[OK] [bold green]Evolution successful![/] Tool is now running version [bold]{result['new_version']}[/].")
         rprint("[dim italic]Internal ontology weights and execution schemas have been synchronized.[/]")
         
     except Exception as e:
@@ -1403,7 +1405,7 @@ def protocol_translate(
         
         bridge_panel = Panel(
             JSON.from_data(result.get("canonical_bridge", {})),
-            title="🧠 Canonical Bridge (Ontology)",
+            title="[ONTOLOGY] Canonical Bridge (Ontology)",
             border_style="yellow"
         )
         
@@ -1442,7 +1444,7 @@ def handoff_test(
             )
 
         # Visualize the handoff
-        tree = Tree(f"🤝 [bold green]Handoff Simulation:[/] {source_agent} ➔ {target_agent}")
+        tree = Tree(f"[HANDOFF] [bold green]Handoff Simulation:[/] {source_agent} -> {target_agent}")
         tree.add(f"Session ID: [bold cyan]{result['session_id']}[/]")
         tree.add(f"Semantic Readiness: [bold green]{result['semantic_readiness']}[/]")
         
@@ -1456,7 +1458,7 @@ def handoff_test(
             cat_node = transferred.add(f"[magenta]{cat.title()}[/]")
             cat_node.add(JSON.from_data(val))
 
-        rprint(Panel(tree, title="✨ Multi-Agent Federation Detail", border_style="cyan"))
+        rprint(Panel(tree, title="[*] Multi-Agent Federation Detail", border_style="cyan"))
         
         rprint(f"\n[green]Success![/] Seamless state transfer verified for [bold]{target_agent}[/].")
         rprint("[dim italic]Handoff maintains artifacts, context, and semantic history across protocol boundaries.[/]")
@@ -1484,7 +1486,7 @@ def run(
     debug: bool = typer.Option(False, "--debug", help="Start TUI dashboard instead of REPL"),
 ):
     """
-    Start the Engram Protocol Bridge — interactive CLI mode.
+    Start the Engram Protocol Bridge - interactive CLI mode.
     """
     if debug:
         _start_debug_tui(host, port)

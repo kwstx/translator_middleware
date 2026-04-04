@@ -14,7 +14,7 @@ entries:
 
   - slug: github
     display_name: GitHub
-    description: GitHub REST API — repositories, issues, pull requests, actions
+    description: GitHub REST API - repositories, issues, pull requests, actions
     category: developer
     tags: [git, vcs, ci-cd, issues]
     openapi_url: https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
@@ -53,7 +53,7 @@ entries:
 
   - slug: slack
     display_name: Slack
-    description: Slack Web API — messages, channels, users, reactions
+    description: Slack Web API - messages, channels, users, reactions
     category: communication
     tags: [chat, messaging, team]
     openapi_url: https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json
@@ -95,7 +95,7 @@ entries:
 
   - slug: stripe
     display_name: Stripe
-    description: Stripe API — payments, customers, subscriptions, invoices
+    description: Stripe API - payments, customers, subscriptions, invoices
     category: fintech
     tags: [payments, billing, subscriptions]
     openapi_url: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
@@ -131,7 +131,7 @@ entries:
 
   - slug: openai
     display_name: OpenAI
-    description: OpenAI API — completions, embeddings, images, files
+    description: OpenAI API - completions, embeddings, images, files
     category: ai-ml
     tags: [ai, llm, embeddings, gpt]
     openapi_url: https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml
@@ -177,7 +177,7 @@ entries:
 
   - slug: cloudflare
     display_name: Cloudflare
-    description: Cloudflare API — DNS, zones, workers, KV
+    description: Cloudflare API - DNS, zones, workers, KV
     category: cloud
     tags: [cdn, dns, edge, workers]
     openapi_url: https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json
@@ -205,7 +205,7 @@ entries:
 
   - slug: supabase
     display_name: Supabase
-    description: Supabase REST API — Postgres, auth, storage, realtime
+    description: Supabase REST API - Postgres, auth, storage, realtime
     category: database
     tags: [postgres, auth, storage, baas]
     openapi_url: null
@@ -234,7 +234,7 @@ entries:
 
   - slug: discord
     display_name: Discord
-    description: Discord Bot API — messages, guilds, channels, reactions
+    description: Discord Bot API - messages, guilds, channels, reactions
     category: communication
     tags: [chat, bot, gaming, community]
     openapi_url: null
@@ -262,7 +262,7 @@ entries:
 
   - slug: twilio
     display_name: Twilio
-    description: Twilio API — SMS, voice calls, WhatsApp messaging
+    description: Twilio API - SMS, voice calls, WhatsApp messaging
     category: communication
     tags: [sms, voice, whatsapp, messaging]
     openapi_url: https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/json/twilio_api_v2010.json
@@ -294,7 +294,7 @@ entries:
 
   - slug: sentry
     display_name: Sentry
-    description: Sentry API — error tracking, performance monitoring, releases
+    description: Sentry API - error tracking, performance monitoring, releases
     category: monitoring
     tags: [errors, apm, observability]
     openapi_url: null
@@ -322,7 +322,7 @@ entries:
 
   - slug: datadog
     display_name: Datadog
-    description: Datadog API — metrics, logs, monitors, dashboards
+    description: Datadog API - metrics, logs, monitors, dashboards
     category: monitoring
     tags: [metrics, logs, apm, observability]
     openapi_url: https://raw.githubusercontent.com/DataDog/datadog-api-client-python/master/.generator/schemas/v1/openapi.yaml
