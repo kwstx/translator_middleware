@@ -12,6 +12,7 @@ import strawberry
 from graphql import parse, build_ast_schema
 
 from app.db.models import ToolRegistry, ToolExecutionMetadata, ExecutionType, AgentRegistry
+from app.schemas.tool import ManualToolCreate
 from app.core.exceptions import ValidationError
 from app.services.llm import LLMService
 
@@ -48,7 +49,7 @@ class RegistryService:
                         "request_body": details.get("requestBody", {}),
                     }
                     actions.append(action)
-
+            
             tool = ToolRegistry(
                 agent_id=agent_id,
                 name=tool_name,
@@ -173,6 +174,54 @@ class RegistryService:
         except Exception as e:
             logger.error("CLI help ingestion failed", command=command, error=str(e))
             raise ValidationError(f"CLI ingestion failed: {str(e)}")
+
+    async def register_manual(self, data: ManualToolCreate, agent_id: uuid.UUID) -> ToolRegistry:
+        """Manually register a tool."""
+        try:
+            # Map parameters to action-style schema
+            parameters = [
+                {
+                    "name": p.name,
+                    "type": p.type,
+                    "required": p.required
+                } for p in data.parameters
+            ]
+            
+            actions = [{
+                "name": data.name,
+                "description": data.description,
+                "method": data.method,
+                "path": data.endpoint_path,
+                "parameters": parameters
+            }]
+            
+            tool = ToolRegistry(
+                agent_id=agent_id,
+                name=data.name,
+                description=data.description,
+                actions=actions
+            )
+            self.db.add(tool)
+            self.db.flush()
+
+            execution_metadata = ToolExecutionMetadata(
+                tool_id=tool.id,
+                execution_type=ExecutionType.HTTP,
+                exec_params={
+                    "base_url": data.base_url,
+                    "endpoint_path": data.endpoint_path,
+                    "method": data.method,
+                    "parameters": parameters,
+                    "source_protocol": "HTTP",
+                },
+            )
+            self.db.add(execution_metadata)
+            self.db.commit()
+            self.db.refresh(tool)
+            return tool
+        except Exception as e:
+            logger.error("Manual tool registration failed", error=str(e))
+            raise ValidationError(f"Manual registration failed: {str(e)}")
 
     async def extract_from_docs(self, docs_text: str, agent_id: uuid.UUID) -> ToolRegistry:
         """Use LLM-assisted extraction (Phi-3/LLMService) to register a tool from partial docs."""

@@ -12,6 +12,7 @@ from app.core.semantic_auth import SemanticAuthorizationService
 import subprocess
 from app.db.models import ToolRegistry, ToolExecutionMetadata
 from app.services.registry_service import RegistryService
+from app.schemas.tool import ManualToolCreate
 from app.services.semantic_trace import SemanticTrace, record_trace
 from app.services.tool_routing import (
     available_backends,
@@ -73,6 +74,19 @@ async def ingest_docs(
     service = RegistryService(db)
     agent_uuid = uuid.UUID(agent_id)
     tool = await service.extract_from_docs(docs_text, agent_uuid)
+    return tool
+
+@router.post("/manual", status_code=status.HTTP_201_CREATED)
+async def register_manual_tool(
+    data: ManualToolCreate,
+    agent_id: uuid.UUID = Body(..., embed=True),
+    db: Session = Depends(get_session)
+):
+    """
+    Manually registers a tool with its specific HTTP details and parameters.
+    """
+    service = RegistryService(db)
+    tool = await service.register_manual(data, agent_id)
     return tool
 
 from sqlalchemy.orm import selectinload
