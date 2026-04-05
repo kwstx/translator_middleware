@@ -357,7 +357,7 @@ def auth_scope():
         payload = jwt.decode(token, options={"verify_signature": False})
         sem_scopes = payload.get("semantic_scopes", [])
         
-        table = Table(title="[ONTOLOGY] Semantic Access Scopes", box=rich.box.DOUBLE_EDGE)
+        table = Table(title="[ONTOLOGY] Semantic Access Scopes", box=box.DOUBLE_EDGE)
         table.add_column("Scope Identifier", style="cyan")
         table.add_column("Ontology Context", style="magenta")
         table.add_column("Capability", style="green")
@@ -881,7 +881,7 @@ def heal_status(
         data = ctx.request("GET", "/api/v1/reconciliation/status")
         
         # Table 1: Drifts
-        drift_table = Table(title="[SEARCH] Semantic Drift Analysis", border_style="bold yellow", box=rich.box.ROUNDED)
+        drift_table = Table(title="[SEARCH] Semantic Drift Analysis", border_style="bold yellow", box=box.ROUNDED)
         drift_table.add_column("Source Protocol", style="cyan")
         drift_table.add_column("Field Drift", style="magenta")
         drift_table.add_column("Ontology Match", style="green")
@@ -909,7 +909,7 @@ def heal_status(
         ctx.console.print(drift_table)
         
         # Table 2: Active Mappings
-        mapping_table = Table(title="[LINK] Persistent Semantic Mappings", border_style="bold green", box=rich.box.ROUNDED)
+        mapping_table = Table(title="[LINK] Persistent Semantic Mappings", border_style="bold green", box=box.ROUNDED)
         mapping_table.add_column("Route", style="cyan")
         mapping_table.add_column("Current Mappings (Source -> Target)", style="white")
         mapping_table.add_column("Ver.", style="dim")
@@ -1008,7 +1008,7 @@ def route_test(
         rprint(Panel(panel_content, title="[START] Optimal Routing Decision", border_style="bold cyan", expand=False))
         
         # Comparison Table
-        table = Table(title="[STATS] Alternative Backends Comparison", box=rich.box.SIMPLE)
+        table = Table(title="[STATS] Alternative Backends Comparison", box=box.SIMPLE)
         table.add_column("Backend", style="cyan")
         table.add_column("Score", style="yellow")
         table.add_column("Sim.", style="dim")
@@ -1039,7 +1039,7 @@ def route_list():
     try:
         results = ctx.request("GET", "/api/v1/routing/list")
         
-        table = Table(title="[GRAPH] Global Tool Performance Stats", box=rich.box.DOUBLE_EDGE, border_style="blue")
+        table = Table(title="[GRAPH] Global Tool Performance Stats", box=box.DOUBLE_EDGE, border_style="blue")
         table.add_column("Tool Name", style="cyan", no_wrap=True)
         table.add_column("Backend", style="magenta")
         table.add_column("Avg Latency", style="yellow", justify="right")
