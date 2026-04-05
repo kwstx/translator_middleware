@@ -216,11 +216,15 @@ const App: React.FC = () => {
           className="auth-card glass glow"
         >
           <div className="auth-header">
-            <div className="logo-badge flex-center">
-              <Shield size={32} color="var(--accent-orange)" />
-            </div>
-            <h1>{isLoginView ? 'Welcome Back' : 'Join Engram'}</h1>
-            <p>{isLoginView ? 'Sign in to access the protocol bridge' : 'Create an account to start orchestrating agents'}</p>
+            <pre className="ascii-logo">{`+--------------------------------------+
+  E N G R A M :: ACCESS TERMINAL      +
+--------------------------------------+
+  NODE  : LOCALHOST
+  ROUTE : /api/v1/auth/login
+  MODE  : ${isLoginView ? 'LOGIN' : 'SIGNUP'}
+--------------------------------------+`}</pre>
+            <div className="auth-title">{isLoginView ? 'LOGIN' : 'SIGNUP'}</div>
+            <p>{isLoginView ? 'Enter credentials to open a secure session.' : 'Create a new operator profile to proceed.'}</p>
           </div>
 
           <form onSubmit={isLoginView ? handleLogin : handleSignup}>
