@@ -220,9 +220,11 @@ async def login_page(request: Request):
             padding: 16px 18px;
             margin-bottom: 18px;
             color: var(--accent);
-            font-size: 0.8rem;
-            line-height: 1.4;
-            text-transform: uppercase;
+            font-family: "Cascadia Mono", "Courier New", monospace;
+            font-size: 0.72rem;
+            line-height: 1.1;
+            letter-spacing: 0.5px;
+            text-transform: none;
         }
 
         .tabs {
@@ -371,12 +373,13 @@ async def login_page(request: Request):
 <body>
     <div class="terminal">
         <div id="auth-view">
-            <pre class="banner">+------------------------------------------------------+
-+   E N G R A M  ::  I D E N T I T Y  T E R M I N A L   +
-+------------------------------------------------------+
-+   NODE  : 127.0.0.1
-+   ROUTE : /api/v1/auth/login
-+------------------------------------------------------+</pre>
+            <pre class="banner">    █████████  ████      ███   █████████   ████████     ███████   ████      ████
+    ██         █████     ███  ██           ██     ██  ███    ███  █████    █████
+    ██         ██████    ███ ███           ██     ██  ███    ███  ██████  ██████
+    ███████    ███ ███   ███ ███     ████  ████████   ██████████  ██  ██████ ███
+    ██         ███  ███  ███ ███      ███ ███     ██  ███    ███  ██   ███   ███
+    ██         ███   ███ ███  ███     ██  ███     ███ ███    ███  ██    ██   ███
+    █████████  ███    ██████   ████████   ███     ██  ███    ███  ██         ███</pre>
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('login')">LOGIN</button>
