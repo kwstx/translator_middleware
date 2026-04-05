@@ -41,8 +41,14 @@ class RegistryService:
             
             # Map paths to actions
             actions = []
+            HTTP_METHODS = {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
             for path, methods in spec.get("paths", {}).items():
+                if not isinstance(methods, dict):
+                    continue
                 for method, details in methods.items():
+                    if method.lower() not in HTTP_METHODS or not isinstance(details, dict):
+                        continue
+                        
                     action = {
                         "name": f"{method.upper()} {path}",
                         "description": details.get("summary") or details.get("description", ""),
@@ -296,7 +302,7 @@ class RegistryService:
 
     def _extract_openapi_base_url(self, spec: Dict[str, Any]) -> Optional[str]:
         servers = spec.get("servers") or []
-        if servers and isinstance(servers, list):
+        if servers and isinstance(servers, list) and isinstance(servers[0], dict):
             return servers[0].get("url")
         return None
 
@@ -319,8 +325,10 @@ class RegistryService:
         poll_param_terms = {"since", "cursor", "updated_after", "updated_at", "timestamp", "page_token", "offset"}
 
         for path, methods in (spec.get("paths") or {}).items():
+            if not isinstance(methods, dict):
+                continue
             for method, details in methods.items():
-                if method.lower() != "get":
+                if not isinstance(details, dict) or method.lower() != "get":
                     continue
                 path_lower = path.lower()
                 params = details.get("parameters", [])

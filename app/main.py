@@ -1,5 +1,10 @@
 import sentry_sdk
+from fastapi import FastAPI, HTTPException, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+import structlog
 from app.core.config import settings
+from app.core.exceptions import TranslatorError, ValidationError
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(
@@ -12,11 +17,6 @@ if settings.SENTRY_DSN:
         # of transactions.
         profiles_sample_rate=1.0,
     )
-
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-import structlog
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -156,6 +156,24 @@ async def validation_exception_handler(request, exc: RequestValidationError):
         body=exc.body,
     )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+@app.exception_handler(TranslatorError)
+async def translator_exception_handler(request, exc: TranslatorError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, ValidationError):
+        status_code = status.HTTP_400_BAD_REQUEST
+    # Mapping other exception types if needed
+    
+    logger.warning(
+        "Translator logic error handled",
+        error_type=type(exc).__name__,
+        detail=str(exc),
+        path=str(request.url.path)
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": str(exc)}
+    )
 
 if settings.RATE_LIMIT_ENABLED:
     limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT_DEFAULT])
