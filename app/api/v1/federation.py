@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Body
+from pydantic import BaseModel
 from sqlmodel import Session, select
 from app.db.session import get_session
 from app.db.models import AgentRegistry
 from app.services.federation_service import FederationService
+from app.services.federation.session import FederationSession
 from app.core.security import require_scopes, get_current_principal
 from typing import Dict, Any, List
 
@@ -113,16 +115,21 @@ async def protocol_translate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class HandoffSimulate(BaseModel):
+    source_agent: str
+    target_agent: str
+
 @router.post("/handoff/simulate", response_model=Dict[str, Any])
 async def handoff_simulate(
-    source_agent: str,
-    target_agent: str,
+    handoff: HandoffSimulate,
     request: Request,
     principal: Dict[str, Any] = Depends(get_current_principal)
 ):
     """
     Simulates a multi-agent handoff and returns semantic state details.
     """
+    source_agent = handoff.source_agent
+    target_agent = handoff.target_agent
     eat_token = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not eat_token:
         eat_token = principal.get("jti", "sim-session-id")
