@@ -140,20 +140,30 @@ async def list_tools(
     """
     List all registered tools including their execution backend metadata.
     """
-    user_id = principal.get("sub")
-    stmt = select(ToolRegistry)
-    if user_id:
-        try:
-            user_uuid = uuid.UUID(user_id)
-            stmt = stmt.where(ToolRegistry.user_id == user_uuid)
-        except (ValueError, TypeError):
-            # If current token has a non-UUID identity (like an old email-based sub),
-            # we skip filtering to avoid 500, though this user likely won't see any private tools.
-            pass
-    
-    stmt = stmt.options(selectinload(ToolRegistry.execution_metadata))
-    results = await db.execute(stmt)
-    return results.scalars().all()
+    try:
+        user_id = principal.get("sub")
+        stmt = select(ToolRegistry)
+        if user_id:
+            try:
+                user_uuid = uuid.UUID(user_id)
+                stmt = stmt.where(ToolRegistry.user_id == user_uuid)
+            except (ValueError, TypeError):
+                # If current token has a non-UUID identity (like an old email-based sub),
+                # we skip filtering to avoid 500, though this user likely won't see any private tools.
+                logger.warning("Non-UUID identity found in token", user_id=user_id)
+                pass
+        
+        stmt = stmt.options(selectinload(ToolRegistry.execution_metadata))
+        results = await db.execute(stmt)
+        tools = results.scalars().all()
+        logger.info("Found tools", count=len(tools), user_id=user_id)
+        return tools
+    except Exception as e:
+        logger.exception("Failed to list tools", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal database error when listing tools: {str(e)}"
+        )
 
 
 # --- MCP Native Server Implementation (JSON-RPC over HTTP) ---
@@ -211,7 +221,7 @@ async def call_mcp_tool(
         arguments = params.get("arguments", {})
         task_description = params.get("task_description") or params.get("task")
 
-        tool = db.get(ToolRegistry, uuid.UUID(tool_id))
+        tool = await db.get(ToolRegistry, uuid.UUID(tool_id))
         if not tool:
             return {"jsonrpc": "2.0", "id": jsonrpc_id, "error": {"code": -32601, "message": "Tool not found"}}
 

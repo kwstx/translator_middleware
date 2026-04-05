@@ -1,0 +1,26 @@
+﻿2026-04-05 16:14:16 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] ProtocolGraph edge added       source=A2A target=MCP weight=1.0
+2026-04-05 16:14:18 [debug    ] ProtocolGraph edge added       source=NL target=MCP weight=1.0
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] Connector registered           name=CLAUDE
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] Connector registered           name=PERPLEXITY
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] Connector registered           name=SLACK
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] Connector registered           name=OPENCLAW
+2026-04-05 16:14:18 [info     ] IntentResolver initialized with transformer-ready architecture.
+2026-04-05 16:14:18 [debug    ] Connector registered           name=HYPOTHETICAL
+2026-04-05 16:14:18 [info     ] Memory loaded from SQLite      fact_count=0 path=C:\Users\galan/.engram/swarm_memory.db
++----------------------------------------+
+| [DONE] GATEWAY ACTIVE                  |
+| Listening on http://127.0.0.1:8000     |
+| API docs at                            |
+| http://127.0.0.1:8000/docs             |
+|                                        |
+| Open a new terminal and run ./engram   |
+| <command> to interact.                 |
+| Press CTRL+C here to stop the server.  |
++----------------------------------------+
