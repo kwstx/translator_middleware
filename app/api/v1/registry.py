@@ -86,7 +86,7 @@ async def register_manual_tool(
     Manually registers a tool with its specific HTTP details and parameters.
     """
     service = RegistryService(db)
-    tool = await service.register_manual(data, agent_id)
+    tool = await service.create_manual_tool(data, agent_id)
     return tool
 
 from sqlalchemy.orm import selectinload

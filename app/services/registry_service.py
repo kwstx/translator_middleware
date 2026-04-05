@@ -175,24 +175,19 @@ class RegistryService:
             logger.error("CLI help ingestion failed", command=command, error=str(e))
             raise ValidationError(f"CLI ingestion failed: {str(e)}")
 
-    async def register_manual(self, data: ManualToolCreate, agent_id: uuid.UUID) -> ToolRegistry:
-        """Manually register a tool."""
+    async def create_manual_tool(self, data: ManualToolCreate, agent_id: uuid.UUID) -> ToolRegistry:
+        """Manually register a tool with a synthetic OpenAPI schema."""
         try:
-            # Map parameters to action-style schema
-            parameters = [
-                {
-                    "name": p.name,
-                    "type": p.type,
-                    "required": p.required
-                } for p in data.parameters
-            ]
+            # Generate synthetic OpenAPI spec
+            synthetic_spec = self._generate_synthetic_openapi(data)
             
+            # Map parameters to action-style schema (consistent with ingest_openapi)
+            path_item = synthetic_spec["paths"][data.endpoint_path][data.method.lower()]
             actions = [{
-                "name": data.name,
-                "description": data.description,
-                "method": data.method,
-                "path": data.endpoint_path,
-                "parameters": parameters
+                "name": f"{data.method.upper()} {data.endpoint_path}",
+                "description": path_item.get("summary") or path_item.get("description", ""),
+                "parameters": path_item.get("parameters", []),
+                "request_body": path_item.get("requestBody", {}),
             }]
             
             tool = ToolRegistry(
@@ -208,10 +203,10 @@ class RegistryService:
                 tool_id=tool.id,
                 execution_type=ExecutionType.HTTP,
                 exec_params={
+                    "openapi_spec": synthetic_spec,  # Synthetic spec for standard discovery
                     "base_url": data.base_url,
                     "endpoint_path": data.endpoint_path,
                     "method": data.method,
-                    "parameters": parameters,
                     "source_protocol": "HTTP",
                 },
             )
@@ -222,6 +217,51 @@ class RegistryService:
         except Exception as e:
             logger.error("Manual tool registration failed", error=str(e))
             raise ValidationError(f"Manual registration failed: {str(e)}")
+
+    def _generate_synthetic_openapi(self, data: ManualToolCreate) -> Dict[str, Any]:
+        """Generate a synthetic OpenAPI 3.0 spec for a manual tool."""
+        
+        # Map manual parameters to OpenAPI-style parameters
+        openapi_parameters = []
+        for p in data.parameters:
+            openapi_parameters.append({
+                "name": p.name,
+                "in": "query",  # Default to query parameters for manual tools
+                "required": p.required,
+                "schema": {
+                    "type": p.type
+                }
+            })
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": data.name,
+                "version": "1.0.0",
+                "description": data.description
+            },
+            "servers": [{"url": data.base_url.rstrip("/")}],
+            "paths": {
+                data.endpoint_path: {
+                    data.method.lower(): {
+                        "summary": data.name,
+                        "description": data.description,
+                        "parameters": openapi_parameters,
+                        "responses": {
+                            "200": {
+                                "description": "Successful response",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return spec
 
     async def extract_from_docs(self, docs_text: str, agent_id: uuid.UUID) -> ToolRegistry:
         """Use LLM-assisted extraction (Phi-3/LLMService) to register a tool from partial docs."""
