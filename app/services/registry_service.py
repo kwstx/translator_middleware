@@ -5,7 +5,8 @@ import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import structlog
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from prance import ResolvingParser
 from openapi_spec_validator import validate_spec
 import strawberry
@@ -19,7 +20,7 @@ from app.services.llm import LLMService
 logger = structlog.get_logger(__name__)
 
 class RegistryService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.llm = LLMService()
 
@@ -57,7 +58,7 @@ class RegistryService:
                 actions=actions
             )
             self.db.add(tool)
-            self.db.flush()
+            await self.db.flush()
 
             execution_metadata = ToolExecutionMetadata(
                 tool_id=tool.id,
@@ -71,8 +72,8 @@ class RegistryService:
                 },
             )
             self.db.add(execution_metadata)
-            self.db.commit()
-            self.db.refresh(tool)
+            await self.db.commit()
+            await self.db.refresh(tool)
             return tool
         except Exception as e:
             logger.error("Failed to ingest OpenAPI", error=str(e))
@@ -142,7 +143,7 @@ class RegistryService:
                 actions=actions
             )
             self.db.add(tool)
-            self.db.flush()
+            await self.db.flush()
 
             # Python template for the thin wrapper
             cli_wrapper_script = (
@@ -169,7 +170,8 @@ class RegistryService:
                 },
             )
             self.db.add(execution_metadata)
-            self.db.commit()
+            await self.db.commit()
+            await self.db.refresh(tool)
             return tool
         except Exception as e:
             logger.error("CLI help ingestion failed", command=command, error=str(e))
@@ -197,7 +199,7 @@ class RegistryService:
                 actions=actions
             )
             self.db.add(tool)
-            self.db.flush()
+            await self.db.flush()
 
             execution_metadata = ToolExecutionMetadata(
                 tool_id=tool.id,
@@ -211,8 +213,8 @@ class RegistryService:
                 },
             )
             self.db.add(execution_metadata)
-            self.db.commit()
-            self.db.refresh(tool)
+            await self.db.commit()
+            await self.db.refresh(tool)
             return tool
         except Exception as e:
             logger.error("Manual tool registration failed", error=str(e))
