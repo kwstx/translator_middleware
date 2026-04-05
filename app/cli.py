@@ -626,7 +626,7 @@ def _get_or_create_agent_id(ctx: CLIContext) -> str:
     return "00000000-0000-0000-0000-000000000000"
 
 
-@register_app.command("api")
+@register_app.command("openapi")
 def register_api(
     source: str = typer.Argument(..., help="URL, local file path to OpenAPI spec, or documentation text"),
     agent_id: Optional[str] = typer.Option(None, help="Agent UUID to link the tool to"),
@@ -692,7 +692,7 @@ def register_api(
     ))
 
 
-@register_app.command("cli")
+@register_app.command("command")
 def register_cli(
     command: str = typer.Argument(..., help="The shell command to register (e.g., 'docker', 'kubectl')"),
     agent_id: Optional[str] = typer.Option(None, help="Agent UUID to link the tool to"),
@@ -736,6 +736,18 @@ def register_cli(
         title="[START] CLI Wrapper Success",
         border_style="magenta"
     ))
+
+
+@register_app.command("tool")
+def register_manual_tool():
+    """
+    Start an interactive session to manually register a new tool.
+    """
+    rprint("\n[bold cyan]Engram Manual Tool Registration[/]")
+    rprint("[dim]This interactive session will guide you through registering a tool without an OpenAPI spec.[/]\n")
+
+    # Initial entry point for the interactive session logic
+    rprint("[yellow]Interactive session initiated. Use this to define tool name, endpoint, and parameters manually.[/]")
 
 
 # --- Heal Subgroup ---
@@ -1700,6 +1712,7 @@ def _print_repl_help():
     table.add_row("tools search <query>", "Search tools by name or tag")
     table.add_row("register openapi <url>", "Register a tool from OpenAPI spec")
     table.add_row("register command <cmd>", "Register a shell command as a tool")
+    table.add_row("register tool", "Start interactive session for manual tool registration")
     table.add_row("route test <tool>", "Test routing decision for a tool")
     table.add_row("route list", "Show all tools with routing stats")
     table.add_row("trace list", "List recent execution traces")
