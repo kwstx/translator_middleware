@@ -69,17 +69,85 @@ Most tool platforms give you connectors that break on custom fields or API chang
 
 ## Documentation
 
-Full documentation lives at docs.engram.dev:
+- Quickstart -- Install to first connected tool in under 5 minutes  
+  The shortest path from zero to a working tool is: install the CLI, register a tool, verify it shows up. This section walks through the minimal happy path.
+  
+  ```bash
+  curl -fsSL https://get.engram.dev/install | bash
+  source ~/.bashrc   # or ~/.zshrc
+  sb register
+  sb tools list
+  ```
 
-- Quickstart — Install to first connected tool in under 5 minutes
-- CLI Reference — All commands and flags
-- Universal Onboarding — How to connect any API or CLI tool
-- Self-Healing Engine — OWL ontologies + ML explained
-- MCP + CLI Hybrid Routing — When each backend is chosen
-- Protocol Federation — A2A and ACP handoff
-- Configuration — EAT tokens, routing weights, ontology
-- Architecture — Phases, components, and design decisions
-- Contributing — Development setup and guidelines
+- CLI Reference -- All commands and flags  
+  A full inventory of `sb` commands with usage, flags, exit codes, and JSON output shape. Use this when scripting or wiring agents to the CLI.
+  
+  ```bash
+  sb <command> --help
+  sb tools list --json
+  sb route test "send an email" --help
+  ```
+
+- Universal Onboarding -- How to connect any API or CLI tool  
+  Shows how to onboard OpenAPI, GraphQL, or raw CLI tools using the same flow. You will see what to provide (endpoint, auth, or CLI manifest) and how the system generates both MCP and CLI representations.
+  
+  ```bash
+  sb register
+  # Follow the prompts to paste an OpenAPI URL, a GraphQL endpoint, or a CLI command.
+  ```
+
+- Self-Healing Engine -- OWL ontologies + ML explained  
+  Explains how schema drift is detected, how mismatched fields get mapped through the ontology layer, and when ML-based reconciliation kicks in. Also covers how healing decisions are traced for review.
+  
+  ```bash
+  sb route test "send an email"
+  sb trace list
+  ```
+
+- MCP + CLI Hybrid Routing -- When each backend is chosen  
+  Details the routing heuristics (structure vs. speed), how performance weights are applied, and how to force a backend when needed for debugging.
+  
+  ```bash
+  sb route test "send an email"
+  sb route test "send an email" --force-mcp
+  sb route test "send an email" --force-cli
+  ```
+
+- Protocol Federation -- A2A and ACP handoff  
+  Covers how requests hop across protocols, how identity and permissions follow the request, and how payloads are normalized through the ontology in transit.
+  
+  ```text
+  Agent -> MCP tool -> ontology bridge -> ACP peer -> response back to agent
+  ```
+
+- Configuration -- EAT tokens, routing weights, ontology  
+  Shows where configuration lives, how to set EAT tokens, and how to tune routing defaults. The CLI config file lives at `~/.engram/config.yaml`, and secrets are stored in the system keyring when available.
+  
+  ```bash
+  sb info
+  sb auth login
+  sb auth status
+  sb config show
+  sb config set backend_preference mcp
+  ```
+  
+  ```yaml
+  api_url: http://127.0.0.1:8000
+  backend_preference: mcp
+  model_provider: openai
+  verbose: false
+  ```
+
+- Architecture -- Phases, components, and design decisions  
+  A system-level walkthrough: ingestion and registration, ontology mapping, routing, execution, tracing, and evolution. Includes why key tradeoffs were made (MCP vs CLI, ontology-first mapping, and weighted routing).
+
+- Contributing -- Development setup and guidelines  
+  The steps to run locally, the repo layout, and how to add or update features without breaking routing or reconciliation.
+  
+  ```bash
+  pip install -r requirements.txt
+  python -m pytest -q
+  ```
 
 Built for developers who want agents that actually work on real-world systems — not just popular SaaS.
 
