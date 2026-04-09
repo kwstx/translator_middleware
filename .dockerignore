@@ -32,9 +32,28 @@ __pycache__/
 *.tmp
 # *.txt (Removed to allow requirements.txt)
 *.db
+*.db-shm
+*.db-wal
 *.out
 playground/
-tests/integration/*.js
-scripts/*.js
-*.db-journal
-*.sqlite3
+tests/
+docs/
+examples/
+cypress/
+engram-client/
+engram-client-gui/
+assets/
+*.mov
+*.mp4
+*.png
+*.jpg
+*.jpeg
+server_log.txt
+2.mov
+
+# Nested dependencies
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/env/
