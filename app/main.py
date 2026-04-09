@@ -30,7 +30,7 @@ from app.api.v1 import (
     workflows,
     federation,
 )
-from bridge.memory_router import router as memory_router
+from bridge.memory import router as memory_router
 from app.core.config import settings
 from app.core.exceptions import TranslatorError, ValidationError
 from app.core.logging import configure_logging
