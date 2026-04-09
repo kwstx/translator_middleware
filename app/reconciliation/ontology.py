@@ -1,6 +1,7 @@
 from owlready2 import *
 import os
 from pathlib import Path
+from app.core.config import settings
 
 # Create a temporary ontology file if it doesn't exist
 BASE_OWL_PATH = Path(__file__).parent / "base.owl"
@@ -38,7 +39,8 @@ class OntologyResolver:
     def __init__(self):
         ensure_base_ontology()
         self.onto = get_ontology(str(BASE_OWL_PATH)).load()
-        self.sync_reasoner()
+        if not settings.LOW_MEMORY_MODE:
+            self.sync_reasoner()
 
     def sync_reasoner(self):
         with self.onto:
