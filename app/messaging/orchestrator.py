@@ -143,13 +143,37 @@ class ProtocolGraph:
 # ---------------------------------------------------------------------------
 class Orchestrator:
     def __init__(self):
-        self.translator = TranslatorEngine()
-        self.protocol_graph = ProtocolGraph()
-        self.protocol_graph.build_from_translator(self.translator)
-        self.intent_resolver = IntentResolver()
-        self.connector_registry = get_default_registry()
-        for c in self.connector_registry.list_connectors():
-            self.protocol_graph.add_protocol(c)
+        self._translator = None
+        self._protocol_graph = None
+        self._intent_resolver = None
+        self._connector_registry = None
+
+    @property
+    def translator(self) -> TranslatorEngine:
+        if self._translator is None:
+            self._translator = TranslatorEngine()
+        return self._translator
+
+    @property
+    def protocol_graph(self) -> ProtocolGraph:
+        if self._protocol_graph is None:
+            self._protocol_graph = ProtocolGraph()
+            self._protocol_graph.build_from_translator(self.translator)
+            for c in self.connector_registry.list_connectors():
+                self._protocol_graph.add_protocol(c)
+        return self._protocol_graph
+
+    @property
+    def intent_resolver(self) -> IntentResolver:
+        if self._intent_resolver is None:
+            self._intent_resolver = IntentResolver()
+        return self._intent_resolver
+
+    @property
+    def connector_registry(self):
+        if self._connector_registry is None:
+            self._connector_registry = get_default_registry()
+        return self._connector_registry
 
     def _generate_execution_proof(self, source_protocol: str, target_protocol: str, input_payload: Dict[str, Any], output_payload: Dict[str, Any]) -> str:
         """Generates a verifiable proof of execution for a single hop."""

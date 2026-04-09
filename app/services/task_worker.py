@@ -32,7 +32,13 @@ class TaskWorker:
         self.lease_seconds = lease_seconds
         self.worker_id = worker_id or f"worker-{uuid.uuid4()}"
         self._task: Optional[asyncio.Task] = None
-        self._orchestrator = Orchestrator()
+        self._orchestrator_instance = None
+
+    @property
+    def orchestrator(self) -> Orchestrator:
+        if self._orchestrator_instance is None:
+            self._orchestrator_instance = Orchestrator()
+        return self._orchestrator_instance
 
     async def start(self) -> None:
         if self._task is not None:
@@ -106,11 +112,11 @@ class TaskWorker:
     async def _process_task(self, session: AsyncSession, task: Task) -> None:
         now = datetime.now(timezone.utc)
         try:
-            await self._orchestrator.translator.refresh_delta_mappings(session)
+            await self.orchestrator.translator.refresh_delta_mappings(session)
             if task.target_protocol == "MULTI_AGENT":
                 logger.debug("Executing multi-agent orchestration task")
                 from app.messaging.multi_agent_orchestrator import MultiAgentOrchestrator
-                multi_orch = MultiAgentOrchestrator(orchestrator=self._orchestrator)
+                multi_orch = MultiAgentOrchestrator(orchestrator=self.orchestrator)
                 
                 # Extract original command and plan if available
                 source_msg = task.source_message or {}

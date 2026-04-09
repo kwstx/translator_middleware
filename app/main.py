@@ -55,7 +55,17 @@ async def lifespan(app: FastAPI):
         # But for middleware, DB is usually critical.
     
     # 2. Start Background Services
-    from app.main import discovery_service, event_listener, task_worker, workflow_scheduler
+    global discovery_service, event_listener, task_worker, workflow_scheduler
+    
+    from app.services.discovery import DiscoveryService
+    from app.services.event_listener import EventListener
+    from app.services.task_worker import TaskWorker
+    from app.services.workflow_scheduler import WorkflowScheduler
+    
+    discovery_service = DiscoveryService()
+    task_worker = TaskWorker()
+    workflow_scheduler = WorkflowScheduler()
+    event_listener = EventListener()
     
     await discovery_service.start_periodic_discovery()
     await event_listener.start()
@@ -99,16 +109,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Initialize services (outside lifespan for access in routes, but started in lifespan)
-from app.services.discovery import DiscoveryService
-from app.services.event_listener import EventListener
-from app.services.task_worker import TaskWorker
-from app.services.workflow_scheduler import WorkflowScheduler
-
-discovery_service = DiscoveryService()
-task_worker = TaskWorker()
-workflow_scheduler = WorkflowScheduler()
-event_listener = EventListener()
+# Services will be initialized in the lifespan handler to save memory during import
+discovery_service = None
+task_worker = None
+workflow_scheduler = None
+event_listener = None
 
 # Set all CORS enabled origins
 if settings.BACKEND_CORS_ORIGINS:

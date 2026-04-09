@@ -36,7 +36,7 @@ class IntentResolver:
         self.capability_registry = capability_registry
         # In a real implementation, this would load a pre-trained transformer model (e.g., BERT/T5/LLM)
         self._model_ready = True
-        logger.info("IntentResolver initialized with transformer-ready architecture.")
+        logger.debug("IntentResolver initialized.")
 
     async def resolve(self, prompt: str, db: Optional[Any] = None) -> IntentResolutionResult:
         """

@@ -27,4 +27,9 @@ COPY . .
 # Final cleanup of any accidentally copied large files or caches
 RUN find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# Use 1 worker to save memory on free tier (512MB RAM)
+ENV UVICORN_WORKERS=1
+ENV PYTHONPATH=/app
+
+# Increase lifespan timeout to allow for slow migrations and model loading
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --lifespan-timeout 120"]

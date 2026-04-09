@@ -93,9 +93,16 @@ async def init_db():
                     from alembic import command
 
                     def run_upgrade():
-                        alembic_cfg = Config("alembic.ini")
-                        alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-                        command.upgrade(alembic_cfg, "head")
+                        try:
+                            logger.info("Alembic: Loading config...")
+                            alembic_cfg = Config("alembic.ini")
+                            alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+                            logger.info("Alembic: Running upgrade head...")
+                            command.upgrade(alembic_cfg, "head")
+                            logger.info("Alembic: Upgrade completed.")
+                        except Exception as ex:
+                            logger.error("Alembic: Upgrade failed", error=str(ex))
+                            raise ex
 
                     await asyncio.to_thread(run_upgrade)
 
