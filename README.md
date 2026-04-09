@@ -23,27 +23,27 @@ Semantic Bridge solves brittle agent tool integrations that break in production.
 ## Quick Install
 
 ```bash
-curl -fsSL https://get.engram.dev/install | bash
+curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
 ```
 
-Works on Linux, macOS, and WSL2. The installer sets up Python dependencies, the `sb` CLI, and core services.
+Works on Linux, macOS, and WSL2. The installer sets up Python dependencies, the `engram` CLI, and core services.
 
 After installation:
 
 ```bash
 source ~/.bashrc    # or source ~/.zshrc
-sb                  # start the CLI
+engram              # start the CLI
 ```
 
 ## Getting Started
 
 ```bash
-sb                  # Interactive CLI mode
-sb register         # Onboard any API or CLI tool
-sb tools list       # View all registered tools
-sb route test "send an email"   # Test intelligent routing
-sb doctor           # Check system health
-sb update           # Update to latest version
+engram                  # Interactive CLI mode
+engram register         # Onboard any API or CLI tool
+engram tools list       # View all registered tools
+engram route test "send an email"   # Test intelligent routing
+engram doctor           # Check system health
+engram update           # Update to latest version
 ```
 
 ## Core Features
@@ -61,9 +61,9 @@ sb update           # Update to latest version
 
 ## CLI Command Reference
 
-The `sb` CLI is your primary interface — clean, scriptable, and agent-friendly with Rich formatting and JSON output mode.
+The `engram` CLI is your primary interface — clean, scriptable, and agent-friendly with Rich formatting and JSON output mode.
 
-Add `--json` for machine-readable output perfect for agents. Run `sb <command> --help` for detailed flags.
+Add `--json` for machine-readable output perfect for agents. Run `engram <command> --help` for detailed flags.
 
 ## Why It’s Different
 
@@ -75,26 +75,26 @@ Most tool platforms give you connectors that break on custom fields or API chang
   The shortest path from zero to a working tool is: install the CLI, register a tool, verify it shows up. This section walks through the minimal happy path.
   
   ```bash
-  curl -fsSL https://get.engram.dev/install | bash
+  curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
   source ~/.bashrc   # or ~/.zshrc
-  sb register
-  sb tools list
+  engram register
+  engram tools list
   ```
 
 - CLI Reference -- All commands and flags  
-  A full inventory of `sb` commands with usage, flags, exit codes, and JSON output shape. Use this when scripting or wiring agents to the CLI.
+  A full inventory of `engram` commands with usage, flags, exit codes, and JSON output shape. Use this when scripting or wiring agents to the CLI.
   
   ```bash
-  sb <command> --help
-  sb tools list --json
-  sb route test "send an email" --help
+  engram <command> --help
+  engram tools list --json
+  engram route test "send an email" --help
   ```
 
 - Universal Onboarding -- How to connect any API or CLI tool  
   Shows how to onboard OpenAPI, GraphQL, or raw CLI tools using the same flow. You will see what to provide (endpoint, auth, or CLI manifest) and how the system generates both MCP and CLI representations.
   
   ```bash
-  sb register
+  engram register
   # Follow the prompts to paste an OpenAPI URL, a GraphQL endpoint, or a CLI command.
   ```
 
@@ -102,17 +102,17 @@ Most tool platforms give you connectors that break on custom fields or API chang
   Explains how schema drift is detected, how mismatched fields get mapped through the ontology layer, and when ML-based reconciliation kicks in. Also covers how healing decisions are traced for review.
   
   ```bash
-  sb route test "send an email"
-  sb trace list
+  engram route test "send an email"
+  engram trace list
   ```
 
 - MCP + CLI Hybrid Routing -- When each backend is chosen  
   Details the routing heuristics (structure vs. speed), how performance weights are applied, and how to force a backend when needed for debugging.
   
   ```bash
-  sb route test "send an email"
-  sb route test "send an email" --force-mcp
-  sb route test "send an email" --force-cli
+  engram route test "send an email"
+  engram route test "send an email" --force-mcp
+  engram route test "send an email" --force-cli
   ```
 
 - Protocol Federation -- A2A and ACP handoff  
@@ -126,11 +126,11 @@ Most tool platforms give you connectors that break on custom fields or API chang
   Shows where configuration lives, how to set EAT tokens, and how to tune routing defaults. The CLI config file lives at `~/.engram/config.yaml`, and secrets are stored in the system keyring when available.
   
   ```bash
-  sb info
-  sb auth login
-  sb auth status
-  sb config show
-  sb config set backend_preference mcp
+  engram info
+  engram auth login
+  engram auth status
+  engram config show
+  engram config set backend_preference mcp
   ```
   
   ```yaml

@@ -10,7 +10,7 @@ Run the one-line installer:
 
 ```bash
 # Linux / macOS / WSL2
-curl -fsSL https://get.engram.dev/install | bash
+curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
 ```
 
 > **Windows Users**

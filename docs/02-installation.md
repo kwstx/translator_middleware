@@ -9,7 +9,7 @@ This page covers every way to install Engram — from the one-line installer to 
 ### Linux / macOS / WSL2
 
 ```bash
-curl -fsSL https://get.engram.dev/install | bash
+curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
 ```
 
 This single command handles everything: directory creation, dependency installation, CLI setup, and PATH configuration. Within 60–90 seconds, the `engram` command is available globally.
