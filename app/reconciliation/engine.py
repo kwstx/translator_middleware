@@ -3,8 +3,6 @@ import uuid
 import structlog
 from typing import Dict, Any, List, Optional, Tuple
 import gc
-import torch
-from sentence_transformers import SentenceTransformer, util
 from app.core.config import settings
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +29,8 @@ class ReconciliationEngine:
     def model(self):
         if self._model is None:
             logger.info("Loading semantic model", model=self._model_name)
+            from sentence_transformers import SentenceTransformer
+            import torch
             self._model = SentenceTransformer(self._model_name)
             if settings.LOW_MEMORY_MODE:
                 torch.set_num_threads(1)
@@ -50,6 +50,7 @@ class ReconciliationEngine:
 
     def compute_similarity(self, term: str) -> List[Tuple[str, float]]:
         """Computes similarity between a term and ontology concepts."""
+        from sentence_transformers import util
         term_embedding = self.model.encode(term, convert_to_tensor=True)
         cosine_scores = util.cos_sim(term_embedding, self.ontology_embeddings)[0]
         

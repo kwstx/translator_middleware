@@ -8,14 +8,10 @@ from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import networkx as nx
-from sentence_transformers import SentenceTransformer
+import numpy as np
+import structlog
 from sqlalchemy import Integer, case, func
 from sqlmodel import select
-import structlog
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import numpy as np
 
 from app.core.config import settings
 from app.db.models import (
@@ -28,6 +24,14 @@ from app.db.models import (
 logger = structlog.get_logger(__name__)
 
 _GRAPH_CACHE: Dict[str, Tuple[float, nx.DiGraph]] = {}
+
+def _get_ml_libs():
+    """Lazy-load heavy ML libraries."""
+    from sentence_transformers import SentenceTransformer
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    return SentenceTransformer, torch, nn, optim
 
 def context_aware_prune_tools(
     tools: List[ToolRegistry],
@@ -126,25 +130,28 @@ class RoutingGuardrails:
     max_token_budget: int
     fallback_backend: str = CLI_BACKEND
 
-class LoadPredictor(nn.Module):
-    """Tiny neural net for load predictions."""
-    def __init__(self, input_size=5, hidden_size=10):
-        super(LoadPredictor, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, 1)
-        self.sigmoid = nn.Sigmoid()
+class LoadPredictor(object):
+    """Placeholder for LoadPredictor until lazy-loaded."""
+    def __new__(cls, *args, **kwargs):
+        _, torch, nn, _ = _get_ml_libs()
+        class ActualLoadPredictor(nn.Module):
+            def __init__(self, input_size=5, hidden_size=10):
+                super(ActualLoadPredictor, self).__init__()
+                self.fc1 = nn.Linear(input_size, hidden_size)
+                self.relu = nn.ReLU()
+                self.fc2 = nn.Linear(hidden_size, 1)
+                self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        # Output represents a 'load factor' or predicted latency/success shift
-        return self.sigmoid(x)
+            def forward(self, x):
+                x = self.fc1(x)
+                x = self.relu(x)
+                x = self.fc2(x)
+                return self.sigmoid(x)
+        return ActualLoadPredictor(*args, **kwargs)
 
-_PREDICTORS: Dict[str, LoadPredictor] = {}
+_PREDICTORS: Dict[str, Any] = {}
 
-def _get_predictor(backend: str) -> LoadPredictor:
+def _get_predictor(backend: str) -> Any:
     if backend not in _PREDICTORS:
         _PREDICTORS[backend] = LoadPredictor()
     return _PREDICTORS[backend]
@@ -160,6 +167,7 @@ def predict_future_metrics(
     if not history:
         return {}
         
+    _, torch, nn, _ = _get_ml_libs()
     model = _get_predictor(backend)
     # Feature engineering from history (take last 5 samples)
     recent = history[-5:]
@@ -202,13 +210,11 @@ _DEFAULT_BACKEND_STATS = BackendStats(
 
 
 @lru_cache(maxsize=1)
-def _embedding_model() -> SentenceTransformer:
-    logger.info("Loading routing embedding model", model=settings.ROUTING_EMBEDDING_MODEL)
-    model = SentenceTransformer(settings.ROUTING_EMBEDDING_MODEL)
+def _embedding_model() -> Any:
+    SentenceTransformer, torch, _, _ = _get_ml_libs()
     if settings.LOW_MEMORY_MODE:
         torch.set_num_threads(1)
-        gc.collect()
-    return model
+    return SentenceTransformer(settings.ROUTING_EMBEDDING_MODEL)
 
 
 @lru_cache(maxsize=2048)
