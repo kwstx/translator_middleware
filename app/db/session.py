@@ -87,26 +87,9 @@ async def init_db():
                 else:
                     # PostgreSQL: full Alembic migration path
                     await conn.execute(text("SELECT pg_advisory_xact_lock(42)"))
-                    logger.info("Database connection established. Running migrations...")
-
-                    from alembic.config import Config
-                    from alembic import command
-
-                    def run_upgrade():
-                        try:
-                            logger.info("Alembic: Loading config...")
-                            alembic_cfg = Config("alembic.ini")
-                            alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-                            logger.info("Alembic: Running upgrade head...")
-                            command.upgrade(alembic_cfg, "head")
-                            logger.info("Alembic: Upgrade completed.")
-                        except Exception as ex:
-                            logger.error("Alembic: Upgrade failed", error=str(ex))
-                            raise ex
-
-                    await asyncio.to_thread(run_upgrade)
-
-            logger.info("Database initialized successfully.")
+                    # Automatic migration can be slow and block port binding on some cloud providers (like Render).
+                    # We skip it and rely on the deployment commands to run 'alembic upgrade head'.
+                    logger.info("Skipping automatic migrations. Ensure 'alembic upgrade head' is run manually or via CI.")
             return
         except Exception as e:
             if i < retries - 1:

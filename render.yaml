@@ -4,6 +4,7 @@ services:
     env: docker
     plan: free
     autoDeploy: true
+    preDeployCommand: "alembic upgrade head"
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL

@@ -204,6 +204,11 @@ class Settings(BaseSettings):
                 (parts.scheme, parts.netloc, parts.path, urlencode(cleaned_pairs), parts.fragment)
             )
 
+        # On Render, if no REDIS_URL is provided, we default to disabled
+        # to avoid blocking on unresolvable 'redis' host.
+        if os.environ.get("RENDER") and not self.REDIS_URL:
+            self.REDIS_ENABLED = False
+
         if not self.REDIS_ENABLED:
             self.REDIS_URL = None
             return self
