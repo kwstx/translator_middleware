@@ -222,5 +222,4 @@ if __name__ == "__main__":
         workers=int(os.getenv("UVICORN_WORKERS", 1)),
         log_config=None,
         lifespan="on",
-        lifespan_timeout=120  # Double from default to allow slow migrations
     )
