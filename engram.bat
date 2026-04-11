@@ -1,6 +1,6 @@
 @echo off
 REM Engram Self-Healing Entry Point
-REM This script initializes the backend, handles dependencies, and launches the TUI environment.
+REM This script initializes the backend, handles dependencies, and launches the interactive CLI.
 REM Usage: .\engram.bat
 
 setlocal

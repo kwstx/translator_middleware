@@ -1665,44 +1665,13 @@ def _animate_banner(console: Console | None = None):
 def run(
     host: str = typer.Option("127.0.0.1", help="Host to bind the backend"),
     port: int = typer.Option(8000, help="Port to run the backend"),
-    debug: bool = typer.Option(False, "--debug", help="Start TUI dashboard instead of REPL"),
 ):
     """
     Start the Engram Protocol Bridge - interactive CLI mode.
     """
-    if debug:
-        _start_debug_tui(host, port)
-        return
     _start_interactive_cli(host, port)
 
 
-def _start_debug_tui(host: str, port: int):
-    """Launch backend + TUI dashboard for visual debugging."""
-    try:
-        import uvicorn
-        from app.main import app as fastapi_app
-        from tui.app import EngramTUI
-    except ImportError as e:
-        rprint(f"[bold red]Error:[/] Missing dependencies: {e}")
-        return
-
-    def run_api():
-        try:
-            uvicorn.run(fastapi_app, host=host, port=port, log_level="warning", access_log=False)
-        except Exception as e:
-            rprint(f"\n[bold red]Backend Failed:[/] {e}")
-            os._exit(1)
-
-    api_thread = threading.Thread(target=run_api, daemon=True)
-    api_thread.start()
-    time.sleep(1.5)
-
-    try:
-        tui = EngramTUI(base_url=f"http://{host}:{port}/api/v1")
-        tui.initial_screen = "debug"
-        tui.run()
-    except Exception as e:
-        rprint(f"[bold red]TUI Error:[/] {e}")
 
 
 def _start_interactive_cli(host: str, port: int):

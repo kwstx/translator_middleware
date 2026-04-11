@@ -64,7 +64,6 @@ def configure_logging(log_level: Optional[str] = None) -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
 
-    from app.core.tui_bridge import tui_logger_processor
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -74,7 +73,6 @@ def configure_logging(log_level: Optional[str] = None) -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             mask_sensitive_data,
-            tui_logger_processor,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

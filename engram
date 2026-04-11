@@ -1,6 +1,6 @@
 #!/bin/bash
 # Engram Self-Healing Entry Point (Linux, macOS)
-# This script initializes the backend, handles dependencies, and launches the TUI environment.
+# This script initializes the backend, handles dependencies, and launches the interactive CLI.
 # Usage: ./engram [command]
 
 # Set DIR to the script's directory
