@@ -12,7 +12,6 @@ from tenacity import (
     retry_if_exception_type,
     before_sleep_log,
 )
-from app.core.tui_bridge import get_tui_event_queue
 from bridge.memory import memory_backend
 from app.core.exceptions import (
     TransientError, 
@@ -41,11 +40,8 @@ def get_idempotency_key(payload: Any, correlation_id: str, retry_count: int) -> 
     return f"{payload_hash}:{correlation_id}:{retry_count}"
 
 def log_to_tui(message: str):
-    """Logs a message directly to the TUI trace panel."""
-    try:
-        get_tui_event_queue().put_nowait(message)
-    except Exception:
-        pass
+    """Placeholder for legacy TUI logging, now uses standard logger."""
+    logger.info("Middleware Event", message=message)
 
 class ReliabilityMiddleware:
     """

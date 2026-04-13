@@ -17,12 +17,13 @@ def test_scope_cache_local_logic(tmp_path):
     assert cache.get(tools) is None
     
     # Store in cache
-    cache.set(tools, corrected)
+    cache.set(tools, corrected, {"tool1": "CLI", "tool2": "MCP"})
     
     # Retrieve from cache
     cached = cache.get(tools)
     assert cached is not None
     assert cached["corrected_schemas"] == corrected
+    assert cached["routing_decisions"] == {"tool1": "CLI", "tool2": "MCP"}
     assert "timestamp" in cached
     assert sorted(cached["tools"]) == sorted(tools)
     
@@ -30,6 +31,7 @@ def test_scope_cache_local_logic(tmp_path):
     new_cache = ScopeCache(cache_dir=str(cache_dir))
     cached_persistent = new_cache.get(tools)
     assert cached_persistent["corrected_schemas"] == corrected
+    assert cached_persistent["routing_decisions"] == {"tool1": "CLI", "tool2": "MCP"}
 
 def test_scope_validation_uses_cache(monkeypatch):
     """Verifies that Scope.validate hits the cache and avoids redundant backend calls."""
@@ -45,30 +47,40 @@ def test_scope_validation_uses_cache(monkeypatch):
     cache = ScopeCache(cache_dir=str(test_cache_dir))
     mock_sdk.scope_cache = cache
     
-    # Mock check_drift to return a correction
+    # Mock transport for batch validation
     correction_data = {"tool1": {"status": "updated"}}
-    mock_sdk.tools.check_drift.return_value = correction_data["tool1"]
+    mock_sdk.transport.request_json.return_value = {
+        "results": {
+            "tool1": {
+                "drift": True,
+                "corrected_schema": correction_data["tool1"],
+                "best_backend": "CLI"
+            }
+        }
+    }
     
     tools = ["tool1"]
     scope1 = Scope(tools=tools)
     
-    # First validation: should call check_drift
+    # First validation: should call /registry/scope/validate via transport
     res1 = scope1.validate(mock_sdk)
     assert res1 is False # drift found
-    assert mock_sdk.tools.check_drift.call_count == 1
+    assert mock_sdk.transport.request_json.call_count == 1
     assert scope1.corrected_schemas == correction_data
+    assert scope1.routing_decisions == {"tool1": "CLI"}
     assert scope1.validation_timestamp is not None
     
     # Reset mock call count
-    mock_sdk.tools.check_drift.reset_mock()
+    mock_sdk.transport.request_json.reset_mock()
     
     # Second validation with a NEW scope object but SAME tools
     scope2 = Scope(tools=tools)
     res2 = scope2.validate(mock_sdk)
     
     assert res2 is False # Should still find drift (from cache)
-    assert mock_sdk.tools.check_drift.call_count == 0 # CACHE HIT: No backend call
+    assert mock_sdk.transport.request_json.call_count == 0 # CACHE HIT: No transport call
     assert scope2.corrected_schemas == correction_data
+    assert scope2.routing_decisions == {"tool1": "CLI"}
     assert scope2.validation_timestamp is not None
     
     # Clean up
@@ -82,8 +94,8 @@ def test_scope_cache_hash_collision_avoidance():
     tools_a = ["tool1", "tool2"]
     tools_b = ["tool1", "tool3"]
     
-    cache.set(tools_a, {"a": 1})
-    cache.set(tools_b, {"b": 2})
+    cache.set(tools_a, {"a": 1}, {"tool1": "CLI"})
+    cache.set(tools_b, {"b": 2}, {"tool1": "MCP"})
     
     assert cache.get(tools_a)["corrected_schemas"] == {"a": 1}
     assert cache.get(tools_b)["corrected_schemas"] == {"b": 2}
@@ -112,3 +124,4 @@ def test_scope_activation_sdk_call():
     assert kwargs["json_body"]["scope_id"] == "step-123"
     assert kwargs["json_body"]["tools"] == tools
     assert kwargs["json_body"]["corrected_schemas"] == scope.corrected_schemas
+    assert kwargs["json_body"]["routing_decisions"] == scope.routing_decisions

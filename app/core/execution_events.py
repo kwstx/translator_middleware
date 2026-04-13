@@ -2,7 +2,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from app.core.tui_bridge import emit_tui_event
 from app.db.models import TaskEvent
 import uuid
 
@@ -17,8 +16,7 @@ async def emit_execution_event(
     level: str = "info",
 ) -> None:
     """
-    Emit a structured execution event for TUI/CLI consumers.
-    - Always pushes to the local TUI event queue (if running).
+    Emit a structured execution event for consumers.
     - Optionally persists to the database for remote clients (CLI).
     """
     payload = {
@@ -30,7 +28,7 @@ async def emit_execution_event(
         "ts": time.time(),
     }
 
-    emit_tui_event(payload)
+    # emit_tui_event(payload)  # TUI Purged
 
     task_uuid = None
     if isinstance(task_id, uuid.UUID):

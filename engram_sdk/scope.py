@@ -54,12 +54,13 @@ class ScopeCache:
             pass
         return None
 
-    def set(self, tools: List[str], corrected_schemas: Dict[str, Any]):
+    def set(self, tools: List[str], corrected_schemas: Dict[str, Any], routing_decisions: Dict[str, str]):
         """Stores validation results and the current timestamp in the cache."""
         key = self._get_hash(tools)
         data = {
             "tools": sorted(tools),
             "corrected_schemas": corrected_schemas,
+            "routing_decisions": routing_decisions,
             "timestamp": time.time()
         }
         try:
@@ -99,6 +100,7 @@ class Scope:
         self.tools = list(tools)
         self.step_id = step_id or str(uuid.uuid4())
         self.corrected_schemas: Dict[str, Any] = {}
+        self.routing_decisions: Dict[str, str] = {}
         self.validation_timestamp: Optional[float] = None
 
     @property
@@ -124,6 +126,7 @@ class Scope:
                 "scope_id": self.step_id,
                 "tools": self.tools,
                 "corrected_schemas": self.corrected_schemas,
+                "routing_decisions": self.routing_decisions,
                 "metadata": {
                     "validated_at": self.validation_timestamp
                 }
@@ -141,7 +144,8 @@ class Scope:
         """
         Queries the real backend state for each tool in the narrow list using the existing registry.
         It runs the OWL ontology + ML embedding check against the current API or CLI definitions 
-        to detect any schema drift or mismatches before any schema is ever sent to the model. 
+        to detect any schema drift AND evaluates the performance-weighted graph to decide 
+        the best backend (MCP or CLI) based on current metrics.
 
         This method uses a caching layer (Redis or local JSON) to ensure repeated steps 
         do not re-validate unnecessarily, keeping the process fast and deterministic.
@@ -168,22 +172,51 @@ class Scope:
         cached_entry = cache.get(self.tools)
         if cached_entry:
             self.corrected_schemas = cached_entry.get("corrected_schemas", {})
+            self.routing_decisions = cached_entry.get("routing_decisions", {})
             self.validation_timestamp = cached_entry.get("timestamp")
             return not bool(self.corrected_schemas)
 
-        drift_detected = False
-        for tool_name in self.tools:
-            # Query the backend state via the registry in the SDK
-            correction = sdk.tools.check_drift(tool_name, sdk.transport)
-            if correction:
-                self.corrected_schemas[tool_name] = correction
-                drift_detected = True
-        
-        # Save validation results to cache for future use
-        self.validation_timestamp = time.time()
-        cache.set(self.tools, self.corrected_schemas)
-        
-        return not drift_detected
+        # Batch validate via the backend endpoint
+        try:
+            payload = {"tools": self.tools}
+            response = sdk.transport.request_json(
+                "POST",
+                "/registry/scope/validate",
+                json_body=payload
+            )
+            
+            val_results = response.get("results", {})
+            drift_detected = False
+            
+            for tool_name, result in val_results.items():
+                if result.get("drift"):
+                    self.corrected_schemas[tool_name] = result.get("corrected_schema")
+                    drift_detected = True
+                
+                # Store pre-calculated routing decision
+                best_backend = result.get("best_backend")
+                if best_backend:
+                    self.routing_decisions[tool_name] = best_backend
+                    
+            # Save validation results to cache for future use
+            self.validation_timestamp = time.time()
+            cache.set(self.tools, self.corrected_schemas, self.routing_decisions)
+            
+            return not drift_detected
+            
+        except Exception:
+            # If batch validation fails, fallback to legacy per-tool drift check (no routing caching)
+            # This ensures robustness if the backend is briefly on an older version.
+            drift_detected = False
+            for tool_name in self.tools:
+                correction = sdk.tools.check_drift(tool_name, sdk.transport)
+                if correction:
+                    self.corrected_schemas[tool_name] = correction
+                    drift_detected = True
+            
+            self.validation_timestamp = time.time()
+            cache.set(self.tools, self.corrected_schemas, {})
+            return not drift_detected
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts the Scope to a dictionary representation."""
@@ -193,6 +226,8 @@ class Scope:
         }
         if self.corrected_schemas:
             data["corrected_schemas"] = self.corrected_schemas
+        if self.routing_decisions:
+            data["routing_decisions"] = self.routing_decisions
         if self.validation_timestamp:
             data["validation_timestamp"] = self.validation_timestamp
         return data
@@ -206,6 +241,8 @@ class Scope:
         )
         if "corrected_schemas" in data:
             instance.corrected_schemas = data["corrected_schemas"]
+        if "routing_decisions" in data:
+            instance.routing_decisions = data["routing_decisions"]
         if "validation_timestamp" in data:
             instance.validation_timestamp = data["validation_timestamp"]
         return instance
@@ -219,5 +256,6 @@ class Scope:
         return (self.step_id == other.step_id and 
                 self.tools == other.tools and 
                 self.corrected_schemas == other.corrected_schemas and
+                self.routing_decisions == getattr(other, "routing_decisions", {}) and
                 self.validation_timestamp == getattr(other, "validation_timestamp", None))
 

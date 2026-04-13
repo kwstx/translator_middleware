@@ -1,4 +1,4 @@
-from owlready2 import *
+from owlready2 import get_ontology, Thing, sync_reasoner
 import os
 from pathlib import Path
 from app.core.config import settings

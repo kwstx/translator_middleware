@@ -22,6 +22,7 @@ from app.services.tool_routing import (
     log_routing_decision,
     route_tool_backend_sync,
     finalize_routing_decision,
+    RoutingDecision,
     context_aware_prune_tools,
     MCP_BACKEND,
     HTTP_BACKEND,
@@ -172,7 +173,22 @@ class ScopeActivateRequest(BaseModel):
     scope_id: str
     tools: List[str]
     corrected_schemas: Dict[str, Any] = {}
+    routing_decisions: Dict[str, str] = {}
     metadata: Dict[str, Any] = {}
+
+
+class ScopeValidateRequest(BaseModel):
+    tools: List[str]
+
+
+class ToolValidationResult(BaseModel):
+    drift: bool
+    corrected_schema: Optional[Dict[str, Any]] = None
+    best_backend: str
+
+
+class ScopeValidationResult(BaseModel):
+    results: Dict[str, ToolValidationResult]
 
 @router.post("/scope/activate", status_code=status.HTTP_201_CREATED)
 async def activate_scope(
@@ -197,6 +213,7 @@ async def activate_scope(
     scope_data = {
         "tools": request.tools,
         "corrected_schemas": request.corrected_schemas,
+        "routing_decisions": request.routing_decisions,
         "metadata": request.metadata,
         "activated_at": time.time()
     }
@@ -206,6 +223,60 @@ async def activate_scope(
     logger.info("Scope activated", scope_id=request.scope_id, user_id=user_id, tool_count=len(request.tools))
     
     return {"status": "ok", "scope_id": request.scope_id}
+
+
+@router.post("/scope/validate", response_model=ScopeValidationResult)
+async def validate_scope_tools(
+    request: ScopeValidateRequest,
+    db: Session = Depends(get_session),
+    principal: Dict[str, Any] = Depends(get_current_principal)
+):
+    """
+    Batch validates tools in a scope for drift and pre-calculates the best performance-based backend.
+    """
+    from app.reconciliation.engine import reconciliation_engine
+    
+    results = {}
+    for tool_name in request.tools:
+        # 1. Check for drift
+        stmt = select(ToolRegistry).where(ToolRegistry.name == tool_name)
+        user_id = principal.get("sub")
+        if user_id:
+            try:
+                stmt = stmt.where(ToolRegistry.user_id == uuid.UUID(user_id))
+            except ValueError:
+                pass
+        
+        stmt = stmt.options(selectinload(ToolRegistry.execution_metadata))
+        tool_res = await db.execute(stmt)
+        tool = tool_res.scalars().first()
+        
+        if not tool:
+            continue
+
+        corrected = await reconciliation_engine.validate_tool_drift(tool_name, tool.input_schema or {})
+        
+        # 2. Determine best backend based on graph performance (ignoring task similarity)
+        best_backend = CLI_BACKEND # Default
+        metadata = tool.execution_metadata
+        if metadata:
+            backends = available_backends(tool, metadata)
+            # Use fetch_backend_stats (async) and then route_tool_backend_sync
+            stats, history = await fetch_backend_stats(db, tool.id, backends, include_history=True)
+            stats = {
+                backend: estimate_backend_stats(tool, metadata, backend, "", stats.get(backend))
+                for backend in backends
+            }
+            decision = route_tool_backend_sync(tool, metadata, "", stats, history_by_backend=history)
+            best_backend = decision.backend
+
+        results[tool_name] = ToolValidationResult(
+            drift=bool(corrected),
+            corrected_schema=corrected,
+            best_backend=best_backend
+        )
+    
+    return ScopeValidationResult(results=results)
 
 
 # --- MCP Native Server Implementation (JSON-RPC over HTTP) ---
@@ -303,39 +374,72 @@ async def call_mcp_tool(
         # Determine execution path
         metadata = tool.execution_metadata
         if metadata:
-            task_description = _infer_task_description(tool, action_name, arguments, task_description)
-            backends = available_backends(tool, metadata)
-            stats = await fetch_backend_stats(db, tool.id, backends)
-            stats = {
-                backend: estimate_backend_stats(tool, metadata, backend, task_description, stats.get(backend))
-                for backend in backends
-            }
-            decision = route_tool_backend_sync(tool, metadata, task_description, stats)
-            decision_record = await log_routing_decision(db, tool.id, action_name, decision)
+            # Check for cached routing decision in active scope
+            scope_id = params.get("scope_id") or params.get("step_id")
+            user_id = principal.get("sub")
+            backend_override = None
+            
+            if scope_id and user_id:
+                from app.core.redis_client import get_redis_client
+                redis = get_redis_client()
+                if redis:
+                    scope_key = f"engram:scope:active:{user_id}:{scope_id}"
+                    cached_scope_raw = redis.get(scope_key)
+                    if cached_scope_raw:
+                        active_scope = json.loads(cached_scope_raw)
+                        backend_override = active_scope.get("routing_decisions", {}).get(tool.name)
+                        if backend_override:
+                            logger.info("Using cached routing decision from scope", 
+                                        tool=tool.name, backend=backend_override, scope_id=scope_id)
+
+            if backend_override:
+                # Bypass routing engine
+                selected_backend = backend_override
+                # We still create a mock decision for the logging/trace infrastructure
+                decision = RoutingDecision(
+                    backend=selected_backend,
+                    candidates=[],
+                    task_description=task_description or "Scoped lookup"
+                )
+                # Skip log_routing_decision if we want 'almost zero overhead', 
+                # but we'll need a record ID for the finalize call.
+                # To truly minimize overhead, we could make finalize optional if record is missing.
+                decision_record = None 
+            else:
+                task_description = _infer_task_description(tool, action_name, arguments, task_description)
+                backends = available_backends(tool, metadata)
+                stats, history = await fetch_backend_stats(db, tool.id, backends, include_history=True)
+                stats = {
+                    backend: estimate_backend_stats(tool, metadata, backend, task_description, stats.get(backend))
+                    for backend in backends
+                }
+                decision = route_tool_backend_sync(tool, metadata, task_description, stats, history_by_backend=history)
+                decision_record = await log_routing_decision(db, tool.id, action_name, decision)
+                selected_backend = decision.backend
 
             import structlog
             structlog.contextvars.bind_contextvars(
-                routing_choice=decision.backend,
-                backend_used=decision.backend,
+                routing_choice=selected_backend,
+                backend_used=selected_backend,
                 ontological_interpretations=f"Mapped '{action_name or 'default'}' to ontology '{tool.name}'",
                 reconciliation_steps="schema_compression_and_validation"
             )
             logger.info(
                 "Execution Path Triggered",
                 tool_id=str(tool.id),
-                routing_choice=decision.backend,
-                backend_used=decision.backend,
+                routing_choice=selected_backend,
+                backend_used=selected_backend,
                 ontological_interpretations=f"Mapped '{action_name or 'default'}' to ontology '{tool.name}'",
                 reconciliation_steps="schema_compression_and_validation",
-                execution_type=decision.backend
+                execution_type=selected_backend
             )
 
             start = time.perf_counter()
             error_message = None
             try:
-                if decision.backend == CLI_BACKEND:
+                if selected_backend == CLI_BACKEND:
                     result = await run_cli_execution(tool, metadata, action_name, arguments, principal)
-                elif decision.backend in {MCP_BACKEND, HTTP_BACKEND}:
+                elif selected_backend in {MCP_BACKEND, HTTP_BACKEND}:
                     result = await run_http_execution(tool, metadata, action_name, arguments, principal)
                 else:
                     result = await run_http_execution(tool, metadata, action_name, arguments, principal)
@@ -352,29 +456,32 @@ async def call_mcp_tool(
                         error_message = error_message or result.get("error", {}).get("message")
                     elif "result" in result:
                         success = True
-                await finalize_routing_decision(
-                    db,
-                    decision_record.id,
-                    success=success,
-                    latency_ms=latency_ms,
-                    token_cost_actual=token_cost_actual,
-                    error=error_message,
-                )
+                
+                if decision_record:
+                    await finalize_routing_decision(
+                        db,
+                        decision_record.id,
+                        success=success,
+                        latency_ms=latency_ms,
+                        token_cost_actual=token_cost_actual,
+                        error=error_message,
+                    )
+                
                 # Record semantic trace for observability
                 best = decision.candidates[0] if decision.candidates else None
                 record_trace(SemanticTrace(
                     tool_name=tool.name,
                     action=action_name or "",
-                    routing_choice=decision.backend,
-                    backend_used=decision.backend,
+                    routing_choice=selected_backend,
+                    backend_used=selected_backend,
                     similarity_score=best.similarity if best else 0.0,
                     composite_score=best.composite_score if best else 0.0,
                     token_cost_est=best.token_cost_est if best else 0.0,
                     context_overhead_est=best.context_overhead_est if best else 0.0,
                     reconciliation_steps=["authz_enforcement", "schema_compression", "backend_routing"],
                     ontological_interpretation=(
-                        f"{decision.backend} chosen for "
-                        f"{'token efficiency' if decision.backend == CLI_BACKEND else 'schema richness'}; "
+                        f"{selected_backend} chosen for "
+                        f"{'token efficiency' if selected_backend == CLI_BACKEND else 'schema richness'}; "
                         f"tool '{tool.name}' action '{action_name or 'default'}'"
                     ),
                     success=success,
