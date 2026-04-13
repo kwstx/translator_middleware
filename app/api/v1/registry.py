@@ -187,6 +187,7 @@ class NamedScopeRequest(BaseModel):
 
 
 class ToolValidationResult(BaseModel):
+    tool_id: str
     drift: bool
     corrected_schema: Optional[Dict[str, Any]] = None
     best_backend: str
@@ -331,6 +332,7 @@ async def validate_scope_tools(
             best_backend = decision.backend
 
         results[tool_name] = ToolValidationResult(
+            tool_id=str(tool.id),
             drift=bool(corrected),
             corrected_schema=corrected,
             best_backend=best_backend
@@ -447,6 +449,20 @@ async def call_mcp_tool(
                     cached_scope_raw = redis.get(scope_key)
                     if cached_scope_raw:
                         active_scope = json.loads(cached_scope_raw)
+                        
+                        # Enforce Scope Authorization: The model proposes, the code disposes.
+                        scope_tools = active_scope.get("tools", [])
+                        if tool.name not in scope_tools and str(tool.id) not in scope_tools:
+                            logger.warning("Scope violation: blocked tool call", tool=tool.name, scope_id=scope_id)
+                            return {
+                                "jsonrpc": "2.0", 
+                                "id": jsonrpc_id, 
+                                "error": {
+                                    "code": -32003, 
+                                    "message": f"Scope Violation: Tool '{tool.name}' is not authorized for the current turn."
+                                }
+                            }
+
                         backend_override = active_scope.get("routing_decisions", {}).get(tool.name)
                         if backend_override:
                             logger.info("Using cached routing decision from scope", 

@@ -54,13 +54,14 @@ class ScopeCache:
             pass
         return None
 
-    def set(self, tools: List[str], corrected_schemas: Dict[str, Any], routing_decisions: Dict[str, str]):
+    def set(self, tools: List[str], corrected_schemas: Dict[str, Any], routing_decisions: Dict[str, str], tool_ids: Dict[str, str]):
         """Stores validation results and the current timestamp in the cache."""
         key = self._get_hash(tools)
         data = {
             "tools": sorted(tools),
             "corrected_schemas": corrected_schemas,
             "routing_decisions": routing_decisions,
+            "tool_ids": tool_ids,
             "timestamp": time.time()
         }
         try:
@@ -102,6 +103,7 @@ class Scope:
         self.name: Optional[str] = None
         self.corrected_schemas: Dict[str, Any] = {}
         self.routing_decisions: Dict[str, str] = {}
+        self.tool_ids: Dict[str, str] = {}
         self.validation_timestamp: Optional[float] = None
         self._sdk: Optional[Any] = None
 
@@ -110,9 +112,11 @@ class Scope:
         """Returns the number of tools in this scope."""
         return len(self.tools)
 
-    def contains(self, tool_id: str) -> bool:
-        """Checks if a specific tool is included in this scope."""
-        return tool_id in self.tools
+    def contains(self, tool_id_or_name: str) -> bool:
+        """Checks if a specific tool (by ID or name) is included in this scope."""
+        if tool_id_or_name in self.tools:
+            return True
+        return tool_id_or_name in self.tool_ids.values()
 
     def activate(self, sdk: Any) -> bool:
         """
@@ -175,6 +179,7 @@ class Scope:
         if cached_entry:
             self.corrected_schemas = cached_entry.get("corrected_schemas", {})
             self.routing_decisions = cached_entry.get("routing_decisions", {})
+            self.tool_ids = cached_entry.get("tool_ids", {})
             self.validation_timestamp = cached_entry.get("timestamp")
             return not bool(self.corrected_schemas)
 
@@ -191,6 +196,11 @@ class Scope:
             drift_detected = False
             
             for tool_name, result in val_results.items():
+                # Extract Tool IDs for the absolute runtime adapter
+                tid = result.get("tool_id")
+                if tid:
+                    self.tool_ids[tool_name] = tid
+
                 if result.get("drift"):
                     self.corrected_schemas[tool_name] = result.get("corrected_schema")
                     drift_detected = True
@@ -202,7 +212,7 @@ class Scope:
                     
             # Save validation results to cache for future use
             self.validation_timestamp = time.time()
-            cache.set(self.tools, self.corrected_schemas, self.routing_decisions)
+            cache.set(self.tools, self.corrected_schemas, self.routing_decisions, self.tool_ids)
             
             return not drift_detected
             
@@ -217,7 +227,7 @@ class Scope:
                     drift_detected = True
             
             self.validation_timestamp = time.time()
-            cache.set(self.tools, self.corrected_schemas, {})
+            cache.set(self.tools, self.corrected_schemas, {}, self.tool_ids)
             return not drift_detected
 
     def to_dict(self) -> Dict[str, Any]:
@@ -232,6 +242,8 @@ class Scope:
             data["routing_decisions"] = self.routing_decisions
         if self.validation_timestamp:
             data["validation_timestamp"] = self.validation_timestamp
+        if self.tool_ids:
+            data["tool_ids"] = self.tool_ids
         return data
 
     @classmethod
@@ -247,7 +259,20 @@ class Scope:
             instance.routing_decisions = data["routing_decisions"]
         if "validation_timestamp" in data:
             instance.validation_timestamp = data["validation_timestamp"]
+        if "tool_ids" in data:
+            instance.tool_ids = data["tool_ids"]
         return instance
+
+    def adapter(self) -> Any:
+        """
+        Returns a RuntimeAdapter that enforces this scope at inference time.
+        Any attempt to call a tool outside this scope will be rejected immediately.
+        """
+        from .adapter import RuntimeAdapter
+        if not self._sdk:
+            from .client import EngramSDK
+            self._sdk = EngramSDK()
+        return RuntimeAdapter(self._sdk, self)
 
     def __repr__(self) -> str:
         name_str = f", name={self.name!r}" if self.name else ""

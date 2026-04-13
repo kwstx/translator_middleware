@@ -2,6 +2,7 @@ from .client import EngramSDK
 from .scope import Scope, ScopeCache
 from .types import ToolDefinition, TaskLease, TaskSubmissionResult, TaskExecution, TaskResponse, TranslationResponse, MappingSuggestion
 from .execution import TaskExecutor
+from .adapter import RuntimeAdapter, ScopeValidationError
 from .exceptions import (
     EngramSDKError,
     EngramAuthError,
@@ -34,6 +35,8 @@ __all__ = [
     "TranslationResponse",
     "MappingSuggestion",
     "EngramSDKError",
+    "ScopeValidationError",
+    "RuntimeAdapter",
     "EngramAuthError",
     "EngramRequestError",
     "EngramResponseError",
