@@ -6,6 +6,7 @@ from .auth import AuthClient
 from .communication import EngramTransport
 from .exceptions import EngramSDKError
 from .execution import TaskExecutor
+from .scope import ScopeCache
 from .tasks import TaskClient
 from .tools import ToolRegistry
 from .translation import TranslationClient
@@ -46,6 +47,10 @@ class EngramSDK:
         self.tasks = TaskClient(self.transport)
         self.tools = ToolRegistry()
         self.translation = TranslationClient(self.transport)
+        
+        # Initialize caching layer for validated scopes (Redis or Local)
+        import os
+        self.scope_cache = ScopeCache(redis_url=os.getenv("REDIS_URL"))
 
         self.agent_id = agent_id
         self.endpoint_url = endpoint_url

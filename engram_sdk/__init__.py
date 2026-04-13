@@ -1,5 +1,5 @@
 from .client import EngramSDK
-from .scope import Scope
+from .scope import Scope, ScopeCache
 from .types import ToolDefinition, TaskLease, TaskSubmissionResult, TaskExecution, TaskResponse, TranslationResponse, MappingSuggestion
 from .execution import TaskExecutor
 from .exceptions import (
@@ -12,6 +12,7 @@ from .exceptions import (
 __all__ = [
     "EngramSDK",
     "Scope",
+    "ScopeCache",
     "ToolDefinition",
     "TaskLease",
     "TaskSubmissionResult",
@@ -25,3 +26,4 @@ __all__ = [
     "EngramRequestError",
     "EngramResponseError",
 ]
+
