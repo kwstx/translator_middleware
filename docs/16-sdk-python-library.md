@@ -18,51 +18,73 @@ from engram_sdk.client import EngramSDK
 
 ---
 
-## Quick Start
+## Quick Start (Recommended)
+
+The recommended way to use Engram in production is via **Validated Scopes**. This pattern ensures your agent only uses the tools it needs for the current turn and validates that they haven't drifted.
 
 ```python
 from engram_sdk.client import EngramSDK
 
-# Initialize and connect
+# 1. Initialize and connect
 sdk = EngramSDK(
     base_url="http://127.0.0.1:8000",
     email="user@company.com",
-    password="your-password"
+    password="password"
 )
-
-# Authenticate
 sdk.connect()
 sdk.login()
-eat = sdk.generate_eat()
-print(f"Authenticated with EAT: {eat[:20]}...")
 
-# Register a tool
-from engram_sdk.client import ToolDefinition, ToolAction
-
-tool = ToolDefinition(
-    name="Weather Checker",
-    description="Get current weather for any city",
-    actions=[
-        ToolAction(
-            name="get_current",
-            description="Get current weather",
-            parameters={"city": {"type": "string", "required": True}},
-            endpoint="/v1/current",
-            method="GET"
-        )
-    ]
-)
-result = sdk.register_tool(tool)
-print(f"Registered: {result}")
-
-# Translate between protocols
-translation = sdk.translate(
-    payload={"name": "get_weather", "arguments": {"city": "London"}},
-    source_protocol="mcp",
-    target_protocol="cli"
-)
-print(f"Translated: {translation}")
+# 2. Use a Validated Scope for an agent turn
+with sdk.scope("step_1_research", tools=["web_search", "get_company_info"]) as scope:
+    # Inside this block, tool discovery only returns the specified tools.
+    # Validation and activation happen automatically.
+    print(f"Active Scope: {scope.name} (Step ID: {scope.step_id})")
+    
+    # Execute a tool within the validated scope (Zero-drift mode)
+    # response = sdk.tools.execute("web_search", {"query": "Engram AI"})
 ```
+
+---
+
+## Validated Scopes
+
+Scopes are the primary mechanism for enforcing developer ownership over the agent's state machine.
+
+### The `sdk.scope()` Context Manager
+
+The `sdk.scope()` method handles validation, backend selection, and activation in one go.
+
+```python
+# Ad-hoc scope with explicit tool list
+with sdk.scope("my_state", tools=["tool_a", "tool_b"]) as scope:
+    pass
+
+# Named scope (fetched from registry)
+with sdk.scope("production_approval_flow") as scope:
+    pass
+```
+
+### Manual Scope Management (Advanced)
+
+If you need more control, you can manage the `Scope` object manually:
+
+```python
+from engram_sdk import Scope
+
+# 1. Create the scope object
+scope = Scope(tools=["web_search"], step_id="unique-turn-id")
+
+# 2. Validate against the backend (checks for schema drift)
+if not scope.validate(sdk):
+    print("Warning: Schema drift detected and auto-healed.")
+
+# 3. Activate the scope (enforces restricted discovery)
+scope.activate(sdk)
+```
+
+> [!IMPORTANT]
+> **Ambient Mode (Prototyping Only)**
+> While you can call `sdk.tools.list()` or `sdk.tools.execute()` without a scope, this is discouraged for production. Ambient mode allows the agent to see all registered tools, increasing the risk of hallucinations and unauthorized tool usage.
 
 ---
 
@@ -198,55 +220,20 @@ print(result.field_mappings)
 
 ## Task Execution
 
-The SDK supports both submitting tasks and receiving them as an agent:
+The SDK supports submitting tasks within a validated scope:
 
-### Submit a Task
-
-```python
-result = sdk.submit_task("Deploy the application to staging")
-print(f"Task ID: {result.task_id}")
-print(f"Status: {result.status}")
-```
-
-### Receive and Execute Tasks (Agent Loop)
+### Submit a Task with Scope
 
 ```python
-from engram_sdk.client import TaskExecutor
+# Create a scope for the task
+scope = sdk.scope("deployment_step", tools=["kubectl", "docker"])
 
-executor = TaskExecutor(sdk)
-
-# Poll for tasks
-while True:
-    task = sdk.receive_task()
-    if task:
-        # Execute the task
-        result = my_tool.execute(task.command)
-        
-        # Send response back
-        sdk.send_response(
-            task_id=task.task_id,
-            result=result,
-            status="completed"
-        )
+# Submit task with restricted toolset
+result = sdk.submit_task(
+    "Deploy 'webapp' to production",
+    scope=scope
+)
 ```
-
-### TaskExecution Dataclass
-
-| Field | Type | Description |
-|---|---|---|
-| `task_id` | `str` | Unique task identifier |
-| `command` | `str` | The task to execute |
-| `lease_expires_at` | `datetime` | When the lease expires |
-| `attempt` | `int` | Current attempt number |
-
-### TaskResponse Dataclass
-
-| Field | Type | Description |
-|---|---|---|
-| `task_id` | `str` | Task identifier |
-| `result` | `Any` | Execution result |
-| `status` | `str` | `completed`, `failed`, `dead_letter` |
-| `error` | `str` | Error message if failed |
 
 ---
 

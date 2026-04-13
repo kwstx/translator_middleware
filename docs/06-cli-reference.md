@@ -438,6 +438,68 @@ After confirming, the tool is registered via `POST /api/v1/registry/manual` with
 
 ---
 
+---
+
+## Scope Subgroup (Recommended Pattern)
+
+Manage narrow tool scopes for agent turns and bounded workflows. This is the primary recommended pattern for production agents to prevent hallucinations and ensure zero-drift execution.
+
+### `engram scope create`
+
+Register a named tool scope in the registry.
+
+```bash
+engram scope create --name <name> --tools <tools>
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `--name`, `-n` | `str` | Unique name for the scope (e.g., `research_phase`) |
+| `--tools`, `-t` | `str` | Comma-separated list of tool names to include |
+
+```bash
+engram scope create --name research --tools "web_search,get_company_info"
+```
+
+### `engram scope list`
+
+List all pre-registered scope templates.
+
+```bash
+engram scope list
+```
+
+### `engram scope validate`
+
+Perform deep validation of a scope: check for schema drift, self-heal, and pre-calculate routing decisions.
+
+```bash
+engram scope validate [OPTIONS]
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `--name`, `-n` | `str` | Name of the scope to validate |
+| `--tools`, `-t` | `str` | Comma-separated list of tools to validate (ad-hoc) |
+
+```bash
+# Validate a registered scope
+engram scope validate --name research
+
+# Validate an ad-hoc set of tools
+engram scope validate --tools "web_search,docker"
+```
+
+### `engram scope show`
+
+Show tool definitions and details for a specific named scope.
+
+```bash
+engram scope show <name>
+```
+
+---
+
 ## Route Subgroup
 
 Test and visualize performance-weighted routing decisions.

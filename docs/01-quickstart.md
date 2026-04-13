@@ -125,27 +125,54 @@ The `*` marker indicates your custom-registered tools (hero tools). The `>` mark
 
 ---
 
-## 5. Test Intelligent Routing
+## 5. Work with Scopes (Recommended Pattern)
+
+For production workflows, you should never expose all tools to your agent at once (ambient mode). Instead, use **Validated Scopes** to restrict tool access to the current conversation step. This prevents hallucinations and ensures zero-drift execution.
+
+### Create a Named Scope
+```bash
+engram scope create --name "research" --tools "Petstore API,docker"
+```
+
+### Validate a Scope
+Check if your tools have drifted and see which backend (MCP or CLI) the router has pre-selected:
+```bash
+engram scope validate --name "research"
+```
+
+### SDK Usage
+In your Python code, use the `with sdk.scope()` context manager to wrap agent turns:
+
+```python
+with sdk.scope("research") as scope:
+    # Inside this block, the agent ONLY sees 'Petstore API' and 'docker'
+    # .validate() and .activate() are called automatically on entry.
+    print(f"Active scope: {scope.step_id}")
+```
+
+> **Important:** While you can use "ambient mode" (calling tools directly) for quick prototyping, **Validated Scopes** are the primary recommended pattern for any production deployment to ensure predictable agent behavior.
+
+---
+
+## 6. Test Intelligent Routing
 
 Ask Engram to route a natural-language task to the best tool and backend:
 
 ```bash
-engram route test "send an email to the team"
+engram route test "find a pet in the store"
 ```
 
-The router evaluates all registered tools, scores them on five dimensions, then selects the optimal backend:
+The router evaluates all registered tools (or restricted by scope if one is active), scores them on five dimensions, then selects the optimal backend:
 
 ```
 ╭──── ▶ Optimal Routing Decision ──────────────────╮
-│ Chosen Tool: Slack                                │
+│ Chosen Tool: Petstore API                         │
 │ Backend: MCP                                      │
-│ Confidence: 87.3%                                 │
-│ Predicted Latency: 245ms                          │
-│ Estimated Cost: 12.5 tokens                       │
+│ Confidence: 91.2%                                 │
+│ Predicted Latency: 180ms                          │
 │                                                   │
-│ Reasoning: Highest composite score for messaging  │
-│ tasks. MCP backend selected for structured        │
-│ reliability over CLI speed.                       │
+│ Reasoning: Perfect match for 'pet' retrieval.     │
+│ MCP backend provides highest reliability.         │
 ╰──────────────────────────────────────────────────╯
 
   Alternative Backends Comparison

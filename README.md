@@ -39,40 +39,43 @@ engram              # start the CLI
 
 ```bash
 engram                  # Interactive CLI mode
+engram scope create     # Define a tool boundary (Recommended)
+engram scope validate   # Check for drift & pre-calculate routing
 engram register         # Onboard any API or CLI tool
 engram tools list       # View all registered tools
-engram route test "send an email"   # Test intelligent routing
-engram doctor           # Check system health
-engram update           # Update to latest version
+engram route test "ask" # Test intelligent routing
 ```
 
 ## Core Features
 
-1. Universal onboarding that accepts any OpenAPI, GraphQL, URL+auth, partial docs, or CLI manifest and auto-generates dual MCP + CLI representations.
-2. Core self-healing engine using OWL ontologies + ML that detects and fixes schema drift, custom fields, and output mismatches in real time.
-3. Unified EAT token with semantic permissions that works across MCP and CLI.
-4. Basic performance-weighted routing that chooses the best backend (CLI for token efficiency or MCP for structured calls) based on task and history.
-5. Bidirectional sync and event layer for any connected system with semantic normalization.
-6. Context-aware pruning and rich semantic traces for observability.
-7. Efficient support for popular apps while keeping custom and internal tools as the hero.
-8. Self-evolving tools: ML continuously improves descriptions, defaults, and recovery strategies from real executions.
-9. Full cross-protocol federation with seamless translation and handoff between MCP, CLI, A2A, and ACP.
-10. Predictive optimizer and adaptive wrappers for legacy/non-API systems.
+1. **Universal onboarding** that accepts any OpenAPI, GraphQL, URL+auth, partial docs, or CLI manifest.
+2. **Validated Scopes (Primary Pattern)**: Define narrow, explicit toolsets for each agent turn to prevent hallucinations and ensure zero-drift execution.
+3. **Core self-healing engine** using OWL ontologies + ML that detects and fixes schema drift in real time.
+4. **Unified EAT token** with semantic permissions that works across MCP and CLI.
+5. **Hybrid MCP + CLI execution** with performance-weighted routing (MCP for structure, CLI for speed).
+6. **Self-evolving tools**: ML continuously improves descriptions and recovery strategies from real executions.
+7. **Cross-protocol federation** with seamless translation between MCP, CLI, A2A, and ACP.
 
-## CLI Command Reference
+---
 
-The `engram` CLI is your primary interface — clean, scriptable, and agent-friendly with Rich formatting and JSON output mode.
+## SDK Usage (Recommended)
 
-Add `--json` for machine-readable output perfect for agents. Run `engram <command> --help` for detailed flags.
+Use the **Validated Scope** pattern for robust production agents:
 
-## Why It’s Different
+```python
+with sdk.scope("research_phase", tools=["web_search", "get_company_info"]) as scope:
+    # Agent ONLY sees these tools. Validation & activation are automatic.
+    pass
+```
 
-Most tool platforms give you connectors that break on custom fields or API changes. Semantic Bridge gives agents tools that heal themselves, intelligently pick between MCP and CLI, evolve over time, and work across protocols — so your agents stay reliable in production without constant maintenance.
+> **Note:** "Ambient mode" (calling tools without a scope) is suitable only for quick prototyping.
+
+---
 
 ## Documentation
 
-- Quickstart -- Install to first connected tool in under 5 minutes  
-  The shortest path from zero to a working tool is: install the CLI, register a tool, verify it shows up. This section walks through the minimal happy path.
+- **Quickstart** -- Install to first validated scope in under 5 minutes  
+  The shortest path from zero to a reliable agent: install, register, and active your first scope.
   
   ```bash
   curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
