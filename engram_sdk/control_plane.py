@@ -9,6 +9,38 @@ from .scope import Scope
 
 logger = structlog.get_logger(__name__)
 
+class Step:
+    """
+    Defines a narrow list of allowed tools or functions for a specific moment 
+    in the workflow, along with preconditions that must be satisfied and 
+    transitions to the next step.
+    """
+    def __init__(
+        self,
+        name: str,
+        tools: List[str],
+        next_step: Optional[str] = None,
+        preconditions: Optional[List[str]] = None,
+        handler: Optional[Callable[[Any, Dict[str, Any]], Tuple[Optional[str], Any]]] = None,
+        required_fields: Optional[List[str]] = None,
+        description: Optional[str] = None
+    ):
+        self.name = name
+        self.tools = tools
+        self.next_step = next_step
+        self.preconditions = preconditions or []
+        self.handler = handler
+        self.required_fields = required_fields or []
+        self.description = description
+
+    def validate_preconditions(self, context: Dict[str, Any]) -> bool:
+        """Verifies that all required context from prior steps is satisfied."""
+        missing = [p for p in self.preconditions if p not in context]
+        if missing:
+            logger.error("step_precondition_failed", step=self.name, missing=missing)
+            return False
+        return True
+
 class ControlPlane:
     """
     Acts as the central state machine and enforces Programmatic Governed Inference (PGI).
@@ -20,7 +52,7 @@ class ControlPlane:
     
     def __init__(self, sdk: EngramSDK):
         self.sdk = sdk
-        self.steps: Dict[str, Dict[str, Any]] = {}
+        self.steps: Dict[str, Step] = {}
         self.context: Dict[str, Any] = {}
         self.current_step_name: Optional[str] = None
 
@@ -31,6 +63,7 @@ class ControlPlane:
         handler: Optional[Callable[[Any, Dict[str, Any]], Tuple[Optional[str], Any]]] = None,
         required_fields: Optional[List[str]] = None,
         next_step: Optional[str] = None,
+        preconditions: Optional[List[str]] = None,
         description: Optional[str] = None
     ) -> ControlPlane:
         """
@@ -43,16 +76,19 @@ class ControlPlane:
                     Signature: (model_output, context) -> (next_step, data).
             required_fields: Optional list of keys that MUST be present in 
                             the model's JSON output for this step to succeed.
-            next_step: Default transition if no handler is provided.
+            next_step: Default transition if no handler is provided or if it returns it.
+            preconditions: List of context keys that must exist before this step starts.
             description: Metadata about the data being gathered.
         """
-        self.steps[name] = {
-            "tools": tools,
-            "handler": handler,
-            "required_fields": required_fields,
-            "next_step": next_step,
-            "description": description
-        }
+        self.steps[name] = Step(
+            name=name,
+            tools=tools,
+            handler=handler,
+            required_fields=required_fields,
+            next_step=next_step,
+            preconditions=preconditions,
+            description=description
+        )
         return self
 
     def run(
@@ -70,43 +106,44 @@ class ControlPlane:
         logger.info("starting_governed_sequence", initial_step=initial_step)
         
         while self.current_step_name:
-            step_config = self.steps.get(self.current_step_name)
-            if not step_config:
+            step = self.steps.get(self.current_step_name)
+            if not step:
                 raise ValueError(f"Step '{self.current_step_name}' not defined.")
             
-            # 1. Enforce Tool Governance (Narrow Scope)
+            # 1. Enforce Preconditions
+            if not step.validate_preconditions(self.context):
+                missing = [p for p in step.preconditions if p not in self.context]
+                raise ValueError(f"Step '{self.current_step_name}' failed preconditions. Missing: {missing}")
+
+            # 2. Enforce Tool Governance (Narrow Scope)
             step_scope = Scope(
-                tools=step_config["tools"], 
+                tools=step.tools, 
                 step_id=f"pgi_{self.current_step_name}_{self.sdk.agent_id or 'anon'}"
             )
             step_scope._sdk = self.sdk
             
-            logger.info("collecting_data", step=self.current_step_name, tools=step_config["tools"])
+            logger.info("collecting_data", step=self.current_step_name, tools=step.tools)
             
             with step_scope:
-                # 2. Governed Inference
+                # 3. Governed Inference
                 model_output = inference_fn(self.current_step_name, step_scope, current_data)
                 
-                # 3. Strict Sequence Validation
-                # If required_fields are missing, we force a retry or prevent transition.
-                if step_config["required_fields"]:
+                # 4. Strict Sequence Validation
+                if step.required_fields:
                     if not isinstance(model_output, dict):
                         raise ValueError(f"Step '{self.current_step_name}' expected dict output, got {type(model_output)}")
                     
-                    missing = [f for f in step_config["required_fields"] if f not in model_output]
+                    missing = [f for f in step.required_fields if f not in model_output]
                     if missing:
                         logger.warning("missing_required_data", step=self.current_step_name, missing=missing)
-                        # In a real system, you might trigger a 'retry_step' or error out.
-                        # For now, we enforce strict compliance.
                         raise ValueError(f"Strict sequencing violation: Step '{self.current_step_name}' failed to collect {missing}")
 
-                # 4. Programmatic Transition
+                # 5. Programmatic Transition
                 # Handler takes precedence, then default next_step.
-                handler = step_config["handler"]
-                if handler:
-                    next_step, next_data = handler(model_output, self.context)
+                if step.handler:
+                    next_step, next_data = step.handler(model_output, self.context)
                 else:
-                    next_step = step_config["next_step"]
+                    next_step = step.next_step
                     next_data = model_output
                 
                 logger.info(

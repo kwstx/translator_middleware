@@ -74,25 +74,29 @@ def main():
         name="identify_user",
         tools=["search_contacts"],
         required_fields=["email"],
+        handler=handle_identification,
         next_step="get_orders",
         description="Must collect user email first."
     )
     
     # Step 2: Force order gathering. Must return 'order_ids'.
-    # Uses a handler for custom branching logic (e.g. if no orders found).
+    # Requires 'user_email' to be in context (provided by identify_user's handler).
     cp.add_step(
         name="get_orders",
         tools=["query_database"],
         required_fields=["order_ids"],
         handler=handle_orders,
+        preconditions=["user_email"],
         description="Gather orders for the identified user."
     )
     
     # Step 3: Analysis.
+    # Requires 'orders' to be in context.
     cp.add_step(
         name="analyze_orders",
         tools=["segmentation_tool"],
         handler=handle_analysis,
+        preconditions=["orders"],
         description="Final governed analysis step."
     )
     
