@@ -666,16 +666,121 @@ def scope_list():
     """
     List all pre-registered scope templates.
     """
-    # Note: Backend doesn't have a dedicated list endpoint yet, 
-    # but we can simulate/implement if needed. 
-    # For now, we'll try to fetch from Redis templates if the API supports it.
     try:
-        # In a real environment, we'd have a GET /registry/scope endpoint
-        # For Phase 1, we focus on creation and activation.
-        rprint("[yellow]Note: Multi-tenant scope listing is currently limited to active session scopes.[/]")
-        rprint("[dim]Use 'engram auth status' for session-specific pruning metadata.[/]")
+        scopes = state.request("GET", "/api/v1/registry/scope")
+        
+        if not scopes:
+            rprint("[yellow]No named scopes found.[/]")
+            return
+
+        table = Table(title="[SCOPE] Registered Scope Templates", box=box.DOUBLE_EDGE)
+        table.add_column("Scope Name", style="bold cyan")
+        table.add_column("Tools Count", justify="center")
+        table.add_column("Tools", style="dim green")
+        
+        for s in scopes:
+            table.add_row(
+                s["name"],
+                str(s["tool_count"]),
+                ", ".join(s["tools"])
+            )
+            
+        state.console.print(table)
+        rprint(f"\n[dim]Showing {len(scopes)} named scope templates.[/]")
+
     except Exception as e:
         rprint(f"[bold red]Error:[/] {e}")
+
+
+@scope_app.command("validate")
+def scope_validate(
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Name of the scope to validate"),
+    tools: Optional[str] = typer.Option(None, "--tools", "-t", help="Comma-separated list of tools to validate")
+):
+    """
+    Perform deep validation of a scope: check for schema drift, self-heal, and route backends.
+    This gives visibility into the upstream validation process.
+    """
+    if not name and not tools:
+        rprint("[bold red]Error:[/] You must provide either [bold]--name[/] or [bold]--tools[/].")
+        raise typer.Exit(1)
+
+    target_desc = f"scope '{name}'" if name else "custom toolset"
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}"),
+        transient=True,
+    ) as progress:
+        progress.add_task(description=f"Validating {target_desc}...", total=None)
+        try:
+            # 1. Resolve tool list
+            if name:
+                tools_to_validate = state.request("GET", f"/api/v1/registry/scope/{name}")
+            else:
+                tools_to_validate = [t.strip() for t in tools.split(",") if t.strip()]
+
+            # 2. Call batch validation
+            response = state.request("POST", "/api/v1/registry/scope/validate", json={"tools": tools_to_validate})
+            results = response.get("results", {})
+
+            # 3. Render Results
+            table = Table(
+                title=f"[SCOPE] Validation Report for {target_desc}",
+                box=box.HEAVY_EDGE,
+                show_lines=True
+            )
+            
+            table.add_column("Tool", style="bold cyan")
+            table.add_column("Status", justify="center")
+            table.add_column("Chosen Backend", justify="center")
+            table.add_column("Validation Details / Healing", style="italic")
+
+            for tool_name, res in results.items():
+                drifted = res.get("drift", False)
+                backend = res.get("best_backend", "N/A").upper()
+                
+                if drifted:
+                    status_fmt = "[bold yellow]DRIFT DETECTED[/]"
+                    # Backend coloring
+                    backend_fmt = f"[bold yellow]{backend}[/]"
+                    
+                    # Details
+                    corrected = res.get("corrected_schema")
+                    if corrected:
+                        # Find what changed if possible, or just summary
+                        details = "[green]Auto-fixed:[/] Schema alignment applied via OWL ontology."
+                    else:
+                        details = "[red]Warning:[/] Drift detected but could not be auto-fixed."
+                else:
+                    status_fmt = "[bold green]VALIDATED[/]"
+                    backend_fmt = f"[bold blue]{backend}[/]"
+                    details = "[dim]No drift detected. Upstream spec is stable.[/]"
+
+                table.add_row(
+                    tool_name,
+                    status_fmt,
+                    backend_fmt,
+                    details
+                )
+
+            state.console.print(table)
+            
+            # Summary panel
+            drift_count = sum(1 for r in results.values() if r.get("drift"))
+            total_count = len(results)
+            
+            summary_color = "green" if drift_count == 0 else "yellow"
+            rprint(Panel(
+                f"Validated [bold]{total_count}[/] tools. found [bold]{drift_count}[/] drifts.",
+                title="Validation Summary",
+                border_style=summary_color,
+                expand=False
+            ))
+
+        except Exception as e:
+            rprint(f"[bold red]Validation Error:[/] {e}")
+            raise typer.Exit(1)
 
 @scope_app.command("show")
 def scope_show(name: str = typer.Argument(..., help="Name of the scope to inspect")):

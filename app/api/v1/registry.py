@@ -254,6 +254,37 @@ async def create_named_scope(
     return {"status": "ok", "name": request.name}
 
 
+@router.get("/scope", response_model=List[Dict[str, Any]])
+async def list_named_scopes(
+    principal: Dict[str, Any] = Depends(get_current_principal)
+):
+    """
+    Lists all named scope templates registered by the current user.
+    """
+    from app.core.redis_client import get_redis_client
+    redis = get_redis_client()
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    user_id = principal.get("sub")
+    pattern = f"engram:scope:template:{user_id}:*"
+    keys = redis.keys(pattern)
+    
+    results = []
+    for key in keys:
+        name = key.split(":")[-1]
+        tools_raw = redis.get(key)
+        if tools_raw:
+            tools = json.loads(tools_raw)
+            results.append({
+                "name": name,
+                "tool_count": len(tools),
+                "tools": tools
+            })
+            
+    return results
+
+
 @router.get("/scope/{name}", response_model=List[str])
 async def get_named_scope(
     name: str,
