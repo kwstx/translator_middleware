@@ -18,73 +18,77 @@ from engram_sdk.client import EngramSDK
 
 ---
 
+---
+
 ## Quick Start (Recommended)
 
-The recommended way to use Engram in production is via **Validated Scopes**. This pattern ensures your agent only uses the tools it needs for the current turn and validates that they haven't drifted.
+The recommended way to use Engram in production is via **Governed Sequencing**. This pattern uses the `ControlPlane` to enforce a strict state machine on the agent, ensuring it follows the correct sequence of steps and uses a centralized `GlobalData` store for state.
 
 ```python
-from engram_sdk.client import EngramSDK
+from engram_sdk import ControlPlane, Step, GlobalData, adapter
 
-# 1. Initialize and connect
-sdk = EngramSDK(
-    base_url="http://127.0.0.1:8000",
-    email="user@company.com",
-    password="password"
+# 1. Initialize the GlobalData store (Single Source of Truth)
+data = GlobalData()
+
+# 2. Define the workflow state machine
+cp = ControlPlane(
+    steps=[
+        Step(name="search", tools=["web_search"], next_step="analyze"),
+        Step(name="analyze", tools=["extract_sentiment"], next_step="finalize"),
+        Step(name="finalize", tools=["submit_report"])
+    ]
 )
-sdk.connect()
-sdk.login()
 
-# 2. Use a Validated Scope for an agent turn
-with sdk.scope("step_1_research", tools=["web_search", "get_company_info"]) as scope:
-    # Inside this block, tool discovery only returns the specified tools.
-    # Validation and activation happen automatically.
-    print(f"Active Scope: {scope.name} (Step ID: {scope.step_id})")
-    
-    # Execute a tool within the validated scope (Zero-drift mode)
-    # response = sdk.tools.execute("web_search", {"query": "Engram AI"})
+# 3. Execute with strict step enforcement
+with cp.step("search"):
+    # The agent is ONLY allowed to call 'web_search'.
+    # All results are automatically logged and persisted to GlobalData.
+    adapter.execute_tool("web_search", query="Engram SDK")
 ```
 
 ---
 
-## Validated Scopes
+## Governed Sequencing
 
-Scopes are the primary mechanism for enforcing developer ownership over the agent's state machine.
+Governed sequencing removes autonomy from the model regarding *the order of operations*, while allowing it to make *small, local decisions* within each step.
 
-### The `sdk.scope()` Context Manager
+### `ControlPlane` & `Step`
 
-The `sdk.scope()` method handles validation, backend selection, and activation in one go.
+The `ControlPlane` acts as the orchestrator. You define a list of `Step` objects that dictate:
+- **Allowed Tools**: Exactly which tools are visible to the model in this turn.
+- **Strict Transitions**: Where the agent can go next.
+- **State Validation**: Ensuring required data exists in `GlobalData` before proceeding.
+
+### `GlobalData` Store
+
+`GlobalData` is a state store that exists entirely outside the model's memory (the "stateless agent" pattern). 
+- **Tool Writes**: Tools should be designed to write their results directly to `GlobalData`.
+- **Tool Reads**: Subsequent tools pull their inputs from `GlobalData`, not from the model's previous messages.
+- **Consistency**: This ensures that even if a model hallucinates a value in its thought process, the system only uses the validated value in the store.
 
 ```python
-# Ad-hoc scope with explicit tool list
-with sdk.scope("my_state", tools=["tool_a", "tool_b"]) as scope:
-    pass
+# Reading from the store
+user_id = data.read("user_id")
 
-# Named scope (fetched from registry)
-with sdk.scope("production_approval_flow") as scope:
-    pass
+# Writing to the store (managed by tools or manually)
+data.write("session_token", "abc-123")
 ```
 
-### Manual Scope Management (Advanced)
+---
 
-If you need more control, you can manage the `Scope` object manually:
+## Validated Scopes (Granular Pattern)
+
+If you don't need a full state machine but want to restrict tools for a single turn, use **Validated Scopes**.
 
 ```python
-from engram_sdk import Scope
-
-# 1. Create the scope object
-scope = Scope(tools=["web_search"], step_id="unique-turn-id")
-
-# 2. Validate against the backend (checks for schema drift)
-if not scope.validate(sdk):
-    print("Warning: Schema drift detected and auto-healed.")
-
-# 3. Activate the scope (enforces restricted discovery)
-scope.activate(sdk)
+with sdk.scope("one_off_task", tools=["calculator", "date_fetcher"]) as scope:
+    # Validation and activation happen automatically.
+    pass
 ```
 
 > [!IMPORTANT]
 > **Ambient Mode (Prototyping Only)**
-> While you can call `sdk.tools.list()` or `sdk.tools.execute()` without a scope, this is discouraged for production. Ambient mode allows the agent to see all registered tools, increasing the risk of hallucinations and unauthorized tool usage.
+> Calling tools without a `ControlPlane` or `Scope` is suitable only for quick development. Ambient mode allows the agent to see all registered tools, increasing the risk of hallucinations and unauthorized tool usage.
 
 ---
 

@@ -125,32 +125,42 @@ The `*` marker indicates your custom-registered tools (hero tools). The `>` mark
 
 ---
 
-## 5. Work with Scopes (Recommended Pattern)
+---
 
-For production workflows, you should never expose all tools to your agent at once (ambient mode). Instead, use **Validated Scopes** to restrict tool access to the current conversation step. This prevents hallucinations and ensures zero-drift execution.
+## 5. Governed Sequencing (Recommended Pattern)
 
-### Create a Named Scope
-```bash
-engram scope create --name "research" --tools "Petstore API,docker"
+For production workflows, you should never expose all tools to your agent at once. Instead, use **Governed Sequencing** to enforce a strict state machine via the `ControlPlane`. This ensures agents follow the "Golden Path" of data collection and never hallucinate the order of operations.
+
+### SDK Usage (Python)
+Use `ControlPlane` and `Step` to define your agent's process:
+
+```python
+from engram_sdk import ControlPlane, Step, GlobalData
+
+# 1. Define the workflow
+cp = ControlPlane(steps=[
+    Step("find", tools=["search_db"], next_step="analyze"),
+    Step("analyze", tools=["extract_data"], next_step="finalize")
+])
+
+# 2. Execute with strict enforcement
+with cp.step("find"):
+    # Inside this block, the agent ONLY sees 'search_db'
+    # Transition to 'analyze' is enforced after completion.
+    pass
 ```
 
-### Validate a Scope
-Check if your tools have drifted and see which backend (MCP or CLI) the router has pre-selected:
+### CLI Support
+You can also manage these boundaries from the CLI:
 ```bash
+# Create a tool boundary for a specific turn
+engram scope create --name "research" --tools "Petstore API,docker"
+
+# Check for drift & pre-calculate optimal routing
 engram scope validate --name "research"
 ```
 
-### SDK Usage
-In your Python code, use the `with sdk.scope()` context manager to wrap agent turns:
-
-```python
-with sdk.scope("research") as scope:
-    # Inside this block, the agent ONLY sees 'Petstore API' and 'docker'
-    # .validate() and .activate() are called automatically on entry.
-    print(f"Active scope: {scope.step_id}")
-```
-
-> **Important:** While you can use "ambient mode" (calling tools directly) for quick prototyping, **Validated Scopes** are the primary recommended pattern for any production deployment to ensure predictable agent behavior.
+> **Important:** While "ambient mode" (calling tools directly) works for prototyping, **Governed Sequencing** is the primary recommended pattern for production deployments to ensure deterministic agent behavior.
 
 ---
 

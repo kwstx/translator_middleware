@@ -48,75 +48,55 @@ engram route test "ask" # Test intelligent routing
 
 ## Core Features
 
-1. **Universal onboarding** that accepts any OpenAPI, GraphQL, URL+auth, partial docs, or CLI manifest.
-2. **Validated Scopes (Primary Pattern)**: Define narrow, explicit toolsets for each agent turn to prevent hallucinations and ensure zero-drift execution.
-3. **Core self-healing engine** using OWL ontologies + ML that detects and fixes schema drift in real time.
-4. **Unified EAT token** with semantic permissions that works across MCP and CLI.
-5. **Hybrid MCP + CLI execution** with performance-weighted routing (MCP for structure, CLI for speed).
-6. **Self-evolving tools**: ML continuously improves descriptions and recovery strategies from real executions.
-7. **Cross-protocol federation** with seamless translation between MCP, CLI, A2A, and ACP.
+1. **Governed Sequencing (Primary Pattern)**: Define strict, deterministic multi-step workflows using the `ControlPlane`. Ensure agents follow the "Golden Path" of data collection without hallucinating order or skipping steps.
+2. **GlobalData Store**: Maintain state entirely outside the LLM's memory. Tools read from and write to a centralized, validated repository, ensuring the model remains stateless and decisions are based on the ground truth.
+3. **Validated Scopes**: Define narrow tool boundaries for each agent turn. Automatic drift detection and pre-calculated routing ensure zero-hallucination execution.
+4. **Self-Healing Engine**: Real-time schema drift detection using OWL ontologies + ML reconcile mismatched fields automatically.
+5. **Unified EAT Identity**: Cryptographically secure identity with step-aware permissions that follow the request across protocols.
+6. **Hybrid MCP + CLI Execution**: Intelligent routing chooses the best backend (MCP for structure, CLI for speed) based on latency and reliability.
 
 ---
 
 ## SDK Usage (Recommended)
 
-Use the **Validated Scope** pattern for robust production agents:
+Build production-grade agents using **Governed Sequencing**:
 
 ```python
-with sdk.scope("research_phase", tools=["web_search", "get_company_info"]) as scope:
-    # Agent ONLY sees these tools. Validation & activation are automatic.
+from engram_sdk import ControlPlane, Step, GlobalData
+
+# 1. Define the workflow state machine
+cp = ControlPlane(steps=[
+    Step("find_user", tools=["search_db"], next_step="check_subscription"),
+    Step("check_subscription", tools=["get_stripe_status"], next_step="finalize")
+])
+
+# 2. Execute with strict step enforcement
+with cp.step("find_user"):
+    # Model is ONLY allowed to call 'search_db'
+    # Orchestrator handles state transitions and logging
     pass
 ```
 
-> **Note:** "Ambient mode" (calling tools without a scope) is suitable only for quick prototyping.
+> **Why?** Moving sequencing logic into the `ControlPlane` makes agents 10x more reliable. The model makes small decisions within narrow steps, while the code enforces the process.
 
 ---
 
 ## Documentation
 
-- **Quickstart** -- Install to first validated scope in under 5 minutes  
-  The shortest path from zero to a reliable agent: install, register, and active your first scope.
-  
-  ```bash
-  curl -fsSL https://kwstx.github.io/engram_translator/setup.sh | bash
-  source ~/.bashrc   # or ~/.zshrc
-  engram register
-  engram tools list
+- **Governed Sequencing** -- The "Golden Path" for multi-step agents  
+  Learn how to use `ControlPlane`, `Step`, and `GlobalData` to build deterministic agents that never skip a step.
+  ```python
+  # See examples/governed_sequencing_agent.py
   ```
 
-- CLI Reference -- All commands and flags  
-  A full inventory of `engram` commands with usage, flags, exit codes, and JSON output shape. Use this when scripting or wiring agents to the CLI.
+- **Universal Onboarding** -- How to connect any API or CLI tool  
+  Onboard OpenAPI, GraphQL, or CLI tools. The system generates both MCP and CLI representations.
   
-  ```bash
-  engram <command> --help
-  engram tools list --json
-  engram route test "send an email" --help
-  ```
+- **Self-Healing Engine** -- OWL ontologies + ML explained  
+  How schema drift is detected and fixed in real-time. Coveres ontology mapping and ML reconciliation.
 
-- Universal Onboarding -- How to connect any API or CLI tool  
-  Shows how to onboard OpenAPI, GraphQL, or raw CLI tools using the same flow. You will see what to provide (endpoint, auth, or CLI manifest) and how the system generates both MCP and CLI representations.
-  
-  ```bash
-  engram register
-  # Follow the prompts to paste an OpenAPI URL, a GraphQL endpoint, or a CLI command.
-  ```
-
-- Self-Healing Engine -- OWL ontologies + ML explained  
-  Explains how schema drift is detected, how mismatched fields get mapped through the ontology layer, and when ML-based reconciliation kicks in. Also covers how healing decisions are traced for review.
-  
-  ```bash
-  engram route test "send an email"
-  engram trace list
-  ```
-
-- MCP + CLI Hybrid Routing -- When each backend is chosen  
-  Details the routing heuristics (structure vs. speed), how performance weights are applied, and how to force a backend when needed for debugging.
-  
-  ```bash
-  engram route test "send an email"
-  engram route test "send an email" --force-mcp
-  engram route test "send an email" --force-cli
-  ```
+- **MCP + CLI Hybrid Routing** -- When each backend is chosen  
+  Details on performance-weighted routing and how to force a backend for debugging.
 
 - Protocol Federation -- A2A and ACP handoff  
   Covers how requests hop across protocols, how identity and permissions follow the request, and how payloads are normalized through the ontology in transit.
