@@ -26,7 +26,8 @@ class Step:
         preconditions: Optional[List[str]] = None,
         handler: Optional[Callable[[Any, GlobalData], Tuple[Optional[str], Any]]] = None,
         required_fields: Optional[List[str]] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        role_guidance: Optional[str] = None
     ):
         self.name = name
         self.tools = tools
@@ -35,6 +36,7 @@ class Step:
         self.handler = handler
         self.required_fields = required_fields or []
         self.description = description
+        self.role_guidance = role_guidance
 
     def validate_preconditions(self, data_store: GlobalData) -> bool:
         """Verifies that all required context from prior steps is satisfied."""
@@ -43,6 +45,14 @@ class Step:
             logger.error("step_precondition_failed", step=self.name, missing=missing)
             return False
         return True
+
+STANDARD_ROLE_GUIDANCE = (
+    "You are a specialized agent participating in a governed tool-use workflow. "
+    "Execute the provided tools to satisfy the current turn's objective. "
+    "Decision-making regarding the overall sequence, data flow, and workflow "
+    "transitions is handled by the ControlPlane. Do not attempt to plan or "
+    "sequence subsequent steps."
+)
 
 class ControlPlane:
     """
@@ -59,6 +69,7 @@ class ControlPlane:
         self.global_data = get_global_data()
         self.current_step_name: Optional[str] = None
         self.tool_handlers: Dict[str, Callable] = {}
+        self.role_guidance: str = STANDARD_ROLE_GUIDANCE
 
     def register_tool_handler(self, tool_name: str, handler: Callable) -> ControlPlane:
         """Maps a tool name to its local implementation function."""
@@ -77,7 +88,8 @@ class ControlPlane:
         required_fields: Optional[List[str]] = None,
         next_step: Optional[str] = None,
         preconditions: Optional[List[str]] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        role_guidance: Optional[str] = None
     ) -> ControlPlane:
         """
         Adds a governed data collection step to the state machine.
@@ -92,6 +104,7 @@ class ControlPlane:
             next_step: Default transition if no handler is provided or if it returns it.
             preconditions: List of context keys that must exist before this step starts.
             description: Metadata about the data being gathered.
+            role_guidance: Optional custom thin instruction for this specific step.
         """
         self.steps[name] = Step(
             name=name,
@@ -100,15 +113,32 @@ class ControlPlane:
             required_fields=required_fields,
             next_step=next_step,
             preconditions=preconditions,
-            description=description
+            description=description,
+            role_guidance=role_guidance
         )
         return self
+
+    def get_system_prompt(self, step_name: str) -> str:
+        """
+        Generates an extremely thin system prompt for the current step.
+        Contains only basic role guidance and the current step's description.
+        All sequencing logic remains strictly in the ControlPlane.
+        """
+        step = self.steps.get(step_name)
+        guidance = (step.role_guidance if step and step.role_guidance 
+                    else self.role_guidance)
+        
+        prompt = f"{guidance}\n\n"
+        if step and step.description:
+            prompt += f"CURRENT OBJECTIVE: {step.description}\n"
+        
+        return prompt.strip()
 
     def run(
         self, 
         initial_step: str, 
         initial_data: Any, 
-        inference_fn: Callable[[str, Scope, Any], Any]
+        inference_fn: Callable[[str, Scope, Any, str], Any]
     ) -> Any:
         """
         Executes the governed sequence starting from the initial step.
@@ -138,8 +168,14 @@ class ControlPlane:
             logger.info("collecting_data", step=self.current_step_name, tools=step.tools)
             
             with step_scope:
-                # 3. Governed Inference
-                model_output = inference_fn(self.current_step_name, step_scope, current_data)
+                # 3. Governed Inference (Thin Prompt)
+                system_prompt = self.get_system_prompt(self.current_step_name)
+                model_output = inference_fn(
+                    self.current_step_name, 
+                    step_scope, 
+                    current_data, 
+                    system_prompt
+                )
                 
                 # 4. Strict Sequence Validation
                 if step.required_fields:
@@ -173,7 +209,7 @@ class ControlPlane:
     def drive(
         self, 
         initial_step: str, 
-        inference_fn: Callable[[str, Scope], ToolCall]
+        inference_fn: Callable[[str, Scope, str], ToolCall]
     ) -> Any:
         """
         Strict Orchestrator: Drives the governed workflow turn-by-turn.
@@ -202,8 +238,9 @@ class ControlPlane:
             with self.sdk.scope(step.name, tools=step.tools) as scope:
                 logger.info("orchestrator_step_active", step=step.name, allowed_tools=step.tools)
                 
-                # Call model to pick a tool/turn
-                tool_call = inference_fn(self.current_step_name, scope)
+                # Call model with Thin Prompt role guidance
+                system_prompt = self.get_system_prompt(self.current_step_name)
+                tool_call = inference_fn(self.current_step_name, scope, system_prompt)
                 
                 # Governance Check: Did the model call a permitted tool?
                 if tool_call.name not in step.tools:

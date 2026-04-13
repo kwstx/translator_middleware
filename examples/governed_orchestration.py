@@ -20,12 +20,13 @@ from engram_sdk import (
     generate_access_report
 )
 
-def mock_llm_orchestration_fn(step_name, scope):
+def mock_llm_orchestration_fn(step_name, scope, system_prompt):
     """
     Simulates an LLM that only returns a ToolCall.
     The orchestrator handles the execution and state transitions.
     """
     print(f"\n--- [LLM Orchestration Turn] Step: {step_name} ---")
+    print(f"[LLM] System Prompt: {system_prompt}")
     print(f"[LLM] Active Tools in Scope: {scope.tools}")
     
     if step_name == "ingest_raw":

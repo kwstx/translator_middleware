@@ -19,12 +19,13 @@ from engram_sdk import (
     generate_access_report
 )
 
-def mock_inference_fn(step_name, scope, data):
+def mock_inference_fn(step_name, scope, data, system_prompt):
     """
     Simulates an LLM in a governed sequence.
     The LLM doesn't need to 'collect' and 'pass' data, just trigger the right tools.
     """
     print(f"\n--- [LLM Turn] Step: {step_name} ---")
+    print(f"[LLM] System Prompt: {system_prompt}")
     
     if step_name == "ingest_raw":
         print("[LLM] User provided raw identity string. Storing it and triggering processing.")

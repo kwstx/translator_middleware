@@ -10,12 +10,13 @@ not by the LLM's own intent.
 from engram_sdk import EngramSDK, ControlPlane, Scope
 import json
 
-def mock_inference_fn(step_name, scope, data):
+def mock_inference_fn(step_name, scope, data, system_prompt):
     """
     A mock inference function that simulates an LLM response.
     In a real app, this would call OpenAI, Anthropic, or Gemini.
     """
     print(f"\n[LLM Turn] Step: {step_name}")
+    print(f"System Prompt (Thin): \"{system_prompt}\"")
     print(f"Allowed Tools: {scope.tools}")
     print(f"Input Data: {data}")
     

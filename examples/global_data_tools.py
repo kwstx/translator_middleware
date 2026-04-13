@@ -8,11 +8,12 @@ from engram_sdk import EngramSDK, ControlPlane
 from engram_sdk.global_data import store_data, retrieve_data
 import json
 
-def mock_inference_fn(step_name, scope, data):
+def mock_inference_fn(step_name, scope, data, system_prompt):
     """
     Simulates an LLM that uses tool calls to manage its memory.
     """
     print(f"\n[LLM Turn] Step: {step_name}")
+    print(f"System Prompt: {system_prompt}")
     print(f"Allowed Tools: {scope.tools}")
     
     if step_name == "collect_info":
