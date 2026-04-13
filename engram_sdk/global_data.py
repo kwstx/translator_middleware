@@ -24,6 +24,15 @@ class GlobalData:
         logger.info("global_data_get", key=key, found=key in self._store)
         return value
 
+    def delete(self, key: str) -> bool:
+        """Removes a key from the global data store."""
+        if key in self._store:
+            del self._store[key]
+            logger.info("global_data_delete", key=key, success=True)
+            return True
+        logger.info("global_data_delete", key=key, success=False)
+        return False
+
     def clear(self) -> None:
         """Clears all data from the global data store."""
         self._store.clear()
@@ -57,6 +66,15 @@ def retrieve_data(key: str) -> Any:
     """
     return get_global_data().get(key)
 
+def delete_data(key: str) -> str:
+    """
+    Removes data from the GlobalData store.
+    """
+    success = get_global_data().delete(key)
+    if success:
+        return f"Successfully deleted '{key}' from GlobalData."
+    return f"Key '{key}' not found in GlobalData."
+
 # Tool Definitions for registration
 STORE_DATA_TOOL = ToolDefinition(
     name="store_data",
@@ -78,6 +96,18 @@ RETRIEVE_DATA_TOOL = ToolDefinition(
         "type": "object",
         "properties": {
             "key": {"type": "string", "description": "The unique identifier for the data piece."}
+        },
+        "required": ["key"]
+    }
+)
+
+DELETE_DATA_TOOL = ToolDefinition(
+    name="delete_data",
+    description="Removes data from the GlobalData store by key. Use this to maintain a clean state.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {"type": "string", "description": "The unique identifier for the data piece to remove."}
         },
         "required": ["key"]
     }

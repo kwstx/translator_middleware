@@ -10,6 +10,17 @@ from .exceptions import (
     EngramRequestError,
     EngramResponseError,
 )
+from .global_data import GlobalData, get_global_data, delete_data, DELETE_DATA_TOOL
+from .controlled_tools import (
+    PROCESS_IDENTITY_TOOL,
+    VERIFY_CLEARANCE_TOOL,
+    GENERATE_REPORT_TOOL,
+    SCRUB_DATA_TOOL,
+    process_raw_identification,
+    verify_security_clearance,
+    generate_access_report,
+    scrub_sensitive_data
+)
 
 from typing import List, Optional
 
@@ -42,5 +53,17 @@ __all__ = [
     "EngramAuthError",
     "EngramRequestError",
     "EngramResponseError",
+    "GlobalData",
+    "get_global_data",
+    "PROCESS_IDENTITY_TOOL",
+    "VERIFY_CLEARANCE_TOOL",
+    "GENERATE_REPORT_TOOL",
+    "DELETE_DATA_TOOL",
+    "SCRUB_DATA_TOOL",
+    "process_raw_identification",
+    "verify_security_clearance",
+    "generate_access_report",
+    "delete_data",
+    "scrub_sensitive_data"
 ]
 
